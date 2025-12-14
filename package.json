@@ -1,0 +1,34 @@
+{
+  "name": "scheduling-ai",
+  "version": "1.0.0",
+  "description": "RBT to Client scheduling matching system",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "npm run update-config && ts-node src/index.ts",
+    "build": "tsc",
+    "dev": "npm run update-config && ts-node-dev --respawn src/index.ts",
+    "serve": "node public/server.js",
+    "demo": "npm run start && npm run serve",
+    "update-config": "node scripts/update-config.js"
+  },
+  "keywords": [
+    "scheduling",
+    "matching",
+    "rbt"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.87.1",
+    "@types/papaparse": "^5.5.1",
+    "csv-parse": "^5.5.2",
+    "papaparse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "dotenv": "^17.2.3",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}

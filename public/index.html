@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rise and Shine - Scheduling AI Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- 
+      Configuration loaded from config.js (which reads from .env)
+    -->
+    <script src="config.js"></script>
+    <script src="schedule-time-config.js"></script>
+    <script>
+        function initGoogleMaps() {
+            if (typeof google !== 'undefined' && google.maps) {
+                window.dispatchEvent(new Event('google-maps-loaded'));
+            }
+        }
+        
+        // Load Google Maps API with key from config
+        function loadGoogleMaps() {
+            const apiKey = window.APP_CONFIG?.GOOGLE_MAPS_API_KEY || '';
+            if (!apiKey) {
+                console.error('Google Maps API key not found in config.js');
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry&callback=initGoogleMaps`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        }
+        
+        // Load maps after config is loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadGoogleMaps);
+        } else {
+            loadGoogleMaps();
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo-section">
+                <h1 class="logo-text">Rise and Shine</h1>
+            </div>
+            <div class="tagline">Where Growth Begins</div>
+        </header>
+
+        <!-- Hero Section -->
+        <section class="hero">
+            <h2 class="hero-title">Scheduling AI <span class="highlight">Matching Dashboard</span></h2>
+            <p class="hero-description">Visualizing RBT-to-Client matches using evidence-based scheduling algorithms</p>
+        </section>
+
+        <!-- Stats Bar -->
+        <section class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-label">Total Clients</div>
+                <div class="stat-value" id="total-clients">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Matched</div>
+                <div class="stat-value matched" id="matched-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Scheduled</div>
+                <div class="stat-value" style="color: #2196F3;" id="scheduled-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Completed</div>
+                <div class="stat-value matched" id="completed-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Standby</div>
+                <div class="stat-value pending" id="standby-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active RBTs</div>
+                <div class="stat-value" id="total-rbts">-</div>
+            </div>
+        </section>
+
+        <!-- Collapsible Sections -->
+        <section class="profiles-section collapsible-section" data-section="profiles">
+            <div class="section-header" onclick="toggleSection('profiles')">
+                <h3 class="section-title">RBT & Client Profiles</h3>
+                <span class="collapse-icon" id="profiles-icon">▼</span>
+            </div>
+            <div class="section-content" id="profiles-content">
+                <div class="profiles-grid">
+                    <!-- RBT Profiles -->
+                    <div class="profile-panel">
+                        <h3 class="profile-panel-title">RBT Profiles</h3>
+                        <div id="rbt-profiles" class="profiles-list">
+                            <!-- RBT profiles will be populated here -->
+                        </div>
+                    </div>
+                    
+                    <!-- Client Profiles -->
+                    <div class="profile-panel">
+                        <h3 class="profile-panel-title">Client Profiles</h3>
+                        <div id="client-profiles" class="profiles-list">
+                            <!-- Client profiles will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Activity Logs -->
+        <section class="logs-section collapsible-section" data-section="logs">
+            <div class="section-header" onclick="toggleSection('logs')">
+                <h3 class="section-title">Activity Logs</h3>
+                <span class="collapse-icon" id="logs-icon">▼</span>
+            </div>
+            <div class="section-content" id="logs-content">
+                <div id="activity-logs" class="logs-container">
+                    <!-- Logs will be populated here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Map Section -->
+            <section class="map-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 class="section-title" style="margin: 0;">Interactive Map</h3>
+                    <button id="show-all-connections-btn" class="show-all-routes-btn" onclick="toggleShowAllRoutes()">
+                        Show All Routes
+                    </button>
+                </div>
+                <div id="map" class="map-container"></div>
+                <div class="map-legend">
+                    <div class="legend-item">
+                        <span class="legend-icon client-icon"></span>
+                        <span>Clients</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-icon rbt-icon"></span>
+                        <span>RBTs</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-line matched-line"></span>
+                        <span>Matched</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-line pending-line"></span>
+                        <span>Pending</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section">
+                <h3 class="section-title">Matching Results</h3>
+                <!-- Search Input -->
+                <div class="search-container">
+                    <input type="text" id="search-input" class="search-input" placeholder="Search by client or RBT name..." autocomplete="off">
+                    <div id="search-suggestions" class="search-suggestions"></div>
+                </div>
+                <div class="filter-bar">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="matched">Matched</button>
+                    <button class="filter-btn" data-filter="scheduled">Scheduled</button>
+                    <button class="filter-btn" data-filter="completed">Completed</button>
+                    <button class="filter-btn" data-filter="standby">Standby</button>
+                    <button class="filter-btn" data-filter="no_location">Needs Location</button>
+                </div>
+                <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <button id="mark-all-scheduled-btn" class="action-btn secondary" onclick="markAllMatchedAsScheduled()">
+                        Mark All Matched as Scheduled
+                    </button>
+                    <button id="export-schedule-btn" class="action-btn secondary" onclick="exportSchedule()">
+                        Export Schedule
+                    </button>
+                </div>
+                <div id="results-count" style="padding: 10px; background: #f5f5f5; border-radius: 8px; margin-bottom: 10px; font-size: 14px; color: #666;">
+                    Showing <span id="results-count-number">0</span> of <span id="results-total-number">0</span> matches
+                </div>
+                <div id="results-list" class="results-list">
+                    <!-- Results will be dynamically populated -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
