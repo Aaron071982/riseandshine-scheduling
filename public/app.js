@@ -289,14 +289,36 @@ function renderRBTProfiles() {
                 <div class="profile-item-details">
                     <div class="profile-item-detail">
                         <span class="profile-item-detail-icon"></span>
-                        <span>${location}</span>
+                        <span><strong>Location:</strong> ${location}</span>
                     </div>
                     ${rbt.transportMode ? `
                     <div class="profile-item-detail">
                         <span class="profile-item-detail-icon"></span>
-                        <span>${rbt.transportMode}</span>
+                        <span><strong>Transport:</strong> ${rbt.transportMode}</span>
                     </div>
                     ` : ''}
+                    ${rbt.gender ? `
+                    <div class="profile-item-detail">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>Gender:</strong> ${rbt.gender}</span>
+                    </div>
+                    ` : ''}
+                    <div class="profile-item-detail">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>Onboarding:</strong> ${rbt.onboardingComplete ? 'Complete' : 'Pending'}</span>
+                    </div>
+                    ${!rbt.onboardingComplete ? `
+                    <div class="profile-item-detail" style="margin-top: 8px;">
+                        <input type="file" id="onboarding-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleOnboardingUpload(event, '${rbt.id}')">
+                        <button onclick="document.getElementById('onboarding-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
+                            Upload Onboarding Documents
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
+                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
+                    </div>
+                    `}
                 </div>
             </div>
         `;
@@ -409,14 +431,36 @@ function renderRBTProfiles() {
                 <div class="profile-item-details">
                     <div class="profile-item-detail">
                         <span class="profile-item-detail-icon"></span>
-                        <span>${location}</span>
+                        <span><strong>Location:</strong> ${location}</span>
                     </div>
                     ${rbt.transportMode ? `
                     <div class="profile-item-detail">
                         <span class="profile-item-detail-icon"></span>
-                        <span>${rbt.transportMode}</span>
+                        <span><strong>Transport:</strong> ${rbt.transportMode}</span>
                     </div>
                     ` : ''}
+                    ${rbt.gender ? `
+                    <div class="profile-item-detail">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>Gender:</strong> ${rbt.gender}</span>
+                    </div>
+                    ` : ''}
+                    <div class="profile-item-detail">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>Onboarding:</strong> ${rbt.onboardingComplete ? 'Complete' : 'Pending'}</span>
+                    </div>
+                    ${!rbt.onboardingComplete ? `
+                    <div class="profile-item-detail" style="margin-top: 8px;">
+                        <input type="file" id="onboarding-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleOnboardingUpload(event, '${rbt.id}')">
+                        <button onclick="document.getElementById('onboarding-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
+                            Upload Onboarding Documents
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
+                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
+                    </div>
+                    `}
                 </div>
             </div>
         `;
