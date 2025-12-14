@@ -687,10 +687,10 @@ async function showConnections(match) {
             
             directionsRenderers.push(directionsRenderer);
             
-            // Extract route info
-            const leg = route.routes[0].legs[0];
-            const distance = leg.distance.value / 1609.34; // Convert meters to miles
-            const travelTime = Math.round(leg.duration.value / 60); // Convert seconds to minutes
+            // Use backend travel time data (from Distance Matrix API) instead of recalculating
+            // This ensures consistency with match cards
+            const distance = match.distanceMiles || (route.routes[0].legs[0].distance.value / 1609.34);
+            const travelTime = match.travelTimeMinutes || Math.round(route.routes[0].legs[0].duration.value / 60);
             const feasible = travelTime <= 30;
             
             // Add midpoint marker with travel info
@@ -702,11 +702,11 @@ async function showConnections(match) {
                     <div class="map-info-window" style="text-align: center; min-width: 200px;">
                         <p style="margin: 4px 0; font-size: 14px; font-weight: 600;">Connection Details</p>
                         <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
-                        <p style="margin: 4px 0; font-size: 12px;">Distance: <strong>${distance.toFixed(1)} miles</strong></p>
-                        <p style="margin: 4px 0; font-size: 12px;">Travel Time: <strong>~${travelTime} minutes</strong></p>
-                        <p style="margin: 4px 0; font-size: 12px;">Mode: <strong>${match.travelMode === 'transit' ? 'Transit' : 'Driving'}</strong></p>
+                        <p style="margin: 4px 0; font-size: 14px;">Distance: <strong>${distance.toFixed(1)} miles</strong></p>
+                        <p style="margin: 4px 0; font-size: 14px;">Travel Time: <strong>${travelTime} minutes</strong></p>
+                        <p style="margin: 4px 0; font-size: 14px;">Mode: <strong>${match.travelMode === 'transit' ? 'Transit' : 'Driving'}</strong></p>
                         <p style="margin: 4px 0; font-size: 13px; color: ${feasible ? '#4CAF50' : '#FF9800'}; font-weight: 600;">
-                            ${feasible ? 'Feasible Route' : 'Longer Commute'}
+                            ${feasible ? 'Within 30 minutes' : 'Longer Commute'}
                         </p>
                     </div>
                 `,
@@ -757,14 +757,19 @@ async function addMarkersAndLines() {
     const bounds = new google.maps.LatLngBounds();
     const geocodePromises = [];
     
-    // First, geocode all addresses (use location borough if address not available)
+    // First, geocode all addresses (skip clients with no location)
     for (const match of matchesData.matches) {
+        // Skip clients with no location information
+        if (match.status === 'no_location' || match.clientNeedsLocation) {
+            continue;
+        }
+        
         if (currentFilter !== 'all' && match.status !== currentFilter) {
             continue;
         }
         const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
         geocodePromises.push(geocodeAddress(clientAddr));
-        if (match.status === 'matched' && match.rbtLocation) {
+        if (match.status === 'matched' && match.rbtLocation && match.rbtName) {
             const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
             geocodePromises.push(geocodeAddress(rbtAddr));
         }
@@ -775,6 +780,11 @@ async function addMarkersAndLines() {
     
     // Now create markers
     for (const match of matchesData.matches) {
+        // Skip clients with no location information
+        if (match.status === 'no_location' || match.clientNeedsLocation) {
+            continue;
+        }
+        
         if (currentFilter !== 'all' && match.status !== currentFilter) {
             continue;
         }
@@ -863,8 +873,8 @@ async function addMarkersAndLines() {
             markers.push(clientMarker);
             infoWindows.push(clientInfoWindow);
             
-            // If matched, add RBT marker
-            if (match.status === 'matched' && match.rbtLocation) {
+            // If matched, add RBT marker (only if RBT has valid location)
+            if (match.status === 'matched' && match.rbtLocation && match.rbtName) {
                 // Use RBT name + location for better unique positioning
                 const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
                 const rbtLocation = await geocodeAddress(rbtAddr);
