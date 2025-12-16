@@ -90,7 +90,6 @@ async function main() {
       travelMode: m.travelMode || (m.rbt?.transport_mode === 'Transit' ? 'transit' : m.rbt?.transport_mode === 'Both' ? 'driving' : 'driving'),
       rbtTransportMode: m.rbt?.transport_mode || 'Both',
       rbtGender: m.rbt?.gender || null,
-      rbtOnboardingComplete: m.rbt?.onboardingComplete || false
     })),
         rbts: rbts.map(r => ({
           id: r.id,

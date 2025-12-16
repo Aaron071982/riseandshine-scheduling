@@ -19,8 +19,7 @@
       "reason": "Matched - 13 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-4",
@@ -41,8 +40,7 @@
       "reason": "Matched - 22 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-6",
@@ -63,8 +61,7 @@
       "reason": "Matched - 20 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-7",
@@ -85,8 +82,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-8",
@@ -107,8 +103,7 @@
       "reason": "Matched - 28 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-9",
@@ -129,8 +124,7 @@
       "reason": "Matched - 28 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-10",
@@ -151,8 +145,7 @@
       "reason": "Matched - 28 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-11",
@@ -173,8 +166,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-12",
@@ -195,8 +187,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-13",
@@ -217,8 +208,7 @@
       "reason": "Matched - 26 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-14",
@@ -239,8 +229,7 @@
       "reason": "Matched - 28 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-15",
@@ -261,8 +250,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-16",
@@ -283,8 +271,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-17",
@@ -305,8 +292,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-18",
@@ -327,8 +313,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-19",
@@ -349,8 +334,7 @@
       "reason": "Matched - 25 min travel time",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-21",
@@ -371,8 +355,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-22",
@@ -393,8 +376,7 @@
       "reason": "No RBT within 30 minutes",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-1",
@@ -415,8 +397,7 @@
       "reason": "Missing location information - set aside for later",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-2",
@@ -437,8 +418,7 @@
       "reason": "Missing location information - set aside for later",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-5",
@@ -459,8 +439,7 @@
       "reason": "Missing location information - set aside for later",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     },
     {
       "clientId": "client-20",
@@ -481,8 +460,7 @@
       "reason": "Missing location information - set aside for later",
       "travelMode": "driving",
       "rbtTransportMode": "Both",
-      "rbtGender": null,
-      "rbtOnboardingComplete": false
+      "rbtGender": null
     }
   ],
   "rbts": [
@@ -493,8 +471,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "taratkhan@gmail.com",
@@ -507,8 +483,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "sijal.413@gmail.com",
@@ -521,8 +495,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "omareldessouki@gmail.com",
@@ -535,8 +507,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "abidaniazi212@outlook.com",
@@ -549,8 +519,6 @@
       "zip": " 11691",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "Eduardorodriguezfigueroa12@gmail.com",
@@ -563,8 +531,6 @@
       "zip": "n/a",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "erjonagjeloshi6@gmail.com",
@@ -577,8 +543,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "nouhpolo@gmail.com",
@@ -591,8 +555,6 @@
       "zip": "10303",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "kazikiwi55@gmail.com",
@@ -605,8 +567,6 @@
       "zip": "11234",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "mahwishmirza32@gmail.com",
@@ -619,8 +579,6 @@
       "zip": null,
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "leenabughalyeh@gmail.com",
@@ -633,8 +591,6 @@
       "zip": "11432",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "Ismatarany@gmail.com",
@@ -647,8 +603,6 @@
       "zip": "11432",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "Onyx.bd@gmail.com",
@@ -661,8 +615,6 @@
       "zip": "11435",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": null,
@@ -675,8 +627,6 @@
       "zip": "11580",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "kausar.kp111@gmail.com",
@@ -689,8 +639,6 @@
       "zip": "10303",
       "transportMode": "Both",
       "gender": null,
-      "onboardingComplete": false,
-      "onboardingDocuments": [],
       "fortyHourCourseComplete": false,
       "fortyHourCourseLink": null,
       "email": "aaronsiam0@gmail.com",
