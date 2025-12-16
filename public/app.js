@@ -324,6 +324,30 @@ function renderRBTProfiles() {
                         <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
                     </div>
                     `}
+                    <div class="profile-item-detail" style="margin-top: 8px;">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>40-Hour Course:</strong> ${rbt.fortyHourCourseComplete ? 'Complete' : 'Not Complete'}</span>
+                    </div>
+                    ${!rbt.fortyHourCourseComplete ? `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;">
+                        <div style="font-size: 12px; color: #856404; font-weight: 600; margin-bottom: 8px;">⚠️ 40-Hour Course Required</div>
+                        ${rbt.fortyHourCourseLink ? `
+                        <a href="${rbt.fortyHourCourseLink}" target="_blank" class="action-btn primary" style="padding: 6px 12px; font-size: 12px; width: 100%; display: block; text-align: center; text-decoration: none; margin-bottom: 8px; background: #FF6B35; color: white; border-radius: 4px;">
+                            Complete 40-Hour Course →
+                        </a>
+                        ` : `
+                        <div style="font-size: 11px; color: #856404; margin-bottom: 8px; padding: 8px; background: #fff; border-radius: 4px;">Course link not available. Please contact administrator.</div>
+                        `}
+                        <input type="file" id="course-upload-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleCourseUpload(event, '${rbt.id}')">
+                        <button onclick="document.getElementById('course-upload-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
+                            Upload Course Certificate
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
+                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">✓ 40-Hour Course Complete</span>
+                    </div>
+                    `}
                 </div>
             </div>
         `;
@@ -464,6 +488,30 @@ function renderRBTProfiles() {
                     ` : `
                     <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
                         <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
+                    </div>
+                    `}
+                    <div class="profile-item-detail" style="margin-top: 8px;">
+                        <span class="profile-item-detail-icon"></span>
+                        <span><strong>40-Hour Course:</strong> ${rbt.fortyHourCourseComplete ? 'Complete' : 'Not Complete'}</span>
+                    </div>
+                    ${!rbt.fortyHourCourseComplete ? `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px;">
+                        <div style="font-size: 12px; color: #856404; font-weight: 600; margin-bottom: 8px;">⚠️ 40-Hour Course Required</div>
+                        ${rbt.fortyHourCourseLink ? `
+                        <a href="${rbt.fortyHourCourseLink}" target="_blank" class="action-btn primary" style="padding: 6px 12px; font-size: 12px; width: 100%; display: block; text-align: center; text-decoration: none; margin-bottom: 8px; background: #FF6B35; color: white; border-radius: 4px;">
+                            Complete 40-Hour Course →
+                        </a>
+                        ` : `
+                        <div style="font-size: 11px; color: #856404; margin-bottom: 8px; padding: 8px; background: #fff; border-radius: 4px;">Course link not available. Please contact administrator.</div>
+                        `}
+                        <input type="file" id="course-upload-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleCourseUpload(event, '${rbt.id}')">
+                        <button onclick="document.getElementById('course-upload-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
+                            Upload Course Certificate
+                        </button>
+                    </div>
+                    ` : `
+                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
+                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">✓ 40-Hour Course Complete</span>
                     </div>
                     `}
                 </div>
