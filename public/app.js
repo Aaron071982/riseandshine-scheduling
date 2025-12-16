@@ -1281,7 +1281,14 @@ function setupFilters() {
             
             // Update filter
             currentFilter = btn.dataset.filter;
+            
+            // Clear selection when filter changes
+            selectedMatchId = null;
+            selectedMatch = null;
+            
             applyFilter();
+            renderSelectedMatchDetails();
+            updateMapSummary();
         });
     });
     
@@ -1309,6 +1316,8 @@ function applyFilter() {
     }
     
     renderResults();
+    renderSelectedMatchDetails();
+    updateMapSummary();
     
     // Update map to show only filtered matches
     if (map) {
