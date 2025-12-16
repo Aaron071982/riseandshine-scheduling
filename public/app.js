@@ -38,6 +38,10 @@ async function init() {
         renderClientProfiles();
         renderActivityLogs();
         renderResults();
+        setupCollapsibleSections();
+        setupSearch();
+        setupFilters();
+        renderSelectedMatchDetails(); // Initialize selected match panel
         
         console.log('✅ UI initialized');
         
@@ -1131,85 +1135,45 @@ function renderResults() {
                     <span class="match-status-pill ${statusClass}">${match.status === 'matched' ? 'Matched' : match.status === 'scheduled' ? 'Scheduled' : match.status === 'completed' ? 'Completed' : match.status === 'standby' ? 'Standby' : 'Needs Location'}</span>
                 </div>
                 ${match.status === 'matched' || match.status === 'scheduled' || match.status === 'completed' ? `
-                    <div class="result-connection">
-                        <div class="connection-line"></div>
-                        <div class="connection-details">
-                            <div class="rbt-info">
-                                <div style="flex: 1;">
-                                    <div class="rbt-name">${match.rbtName || 'No RBT assigned'}</div>
-                                    <div class="rbt-location">${match.rbtLocation || match.rbtZip || 'Unknown'} ${match.rbtZip ? `(Zip: ${match.rbtZip})` : ''}</div>
-                                    <div class="travel-mode-badge">Mode: ${travelModeBadge}</div>
-                                </div>
-                            </div>
-                            ${match.travelTimeMinutes ? `
-                            <div class="travel-info">
-                                <div class="travel-stat">
-                                    <span class="travel-label">Distance</span>
-                                    <span class="travel-value">${match.distanceMiles ? match.distanceMiles.toFixed(1) : 'N/A'} miles</span>
-                                </div>
-                                <div class="travel-stat">
-                                    <span class="travel-label">Travel Time</span>
-                                    <span class="travel-value ${match.travelTimeMinutes <= 30 ? 'feasible' : 'long'}">${match.travelTimeMinutes} minutes</span>
-                                </div>
-                                <div class="travel-stat">
-                                    <span class="travel-label">Mode</span>
-                                    <span class="travel-value">${travelModeDisplay}</span>
-                                </div>
-                                ${match.travelTimeMinutes <= 30 ? 
-                                    '<div class="travel-status feasible">Within 30 minutes</div>' :
-                                    '<div class="travel-status long">Longer Commute</div>'
-                                }
-                            </div>
-                            ` : `
-                            <div class="travel-info-placeholder" data-client-id="${match.clientId}">
-                                <div style="text-align: center; padding: 12px; color: #666; font-size: 14px;">
-                                    Loading travel information...
-                                </div>
-                            </div>
-                            `}
+                    <div class="match-rbt-info">
+                        <div class="match-rbt-name">${match.rbtName || 'No RBT assigned'}</div>
+                        <div class="match-rbt-location">${match.rbtLocation || match.rbtZip || 'Unknown'}${match.rbtZip ? ` • Zip: ${match.rbtZip}` : ''}</div>
+                    </div>
+                    ${match.travelTimeMinutes ? `
+                    <div class="match-travel-info">
+                        <div class="match-travel-stat">
+                            <div class="match-travel-label">Distance</div>
+                            <div class="match-travel-value">${match.distanceMiles ? match.distanceMiles.toFixed(1) : 'N/A'}</div>
                         </div>
+                        <div class="match-travel-stat">
+                            <div class="match-travel-label">Time</div>
+                            <div class="match-travel-value ${match.travelTimeMinutes <= 30 ? 'feasible' : 'long'}">${match.travelTimeMinutes}m</div>
+                        </div>
+                        <div class="match-travel-stat">
+                            <div class="match-travel-label">Mode</div>
+                            <div class="match-travel-value">${travelModeDisplay}</div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="match-actions">
                         <button onclick="event.stopPropagation(); window.showConnectionsForMatch('${match.clientId}')" 
                                 class="match-action-btn primary">
                             View on Map
                         </button>
+                        ${match.status === 'matched' ? `
+                        <button onclick="event.stopPropagation(); markMatchAsScheduled('${match.clientId}')" 
+                                class="match-action-btn">
+                            Schedule
+                        </button>
+                        ` : ''}
                     </div>
                 ` : match.status === 'standby' ? `
-                    <div class="result-connection" style="opacity: 0.7;">
-                        <div class="connection-details">
-                            <p style="color: #FF9800; font-size: 15px; margin: 0; font-weight: 600;">STANDBY: ${standbyReason}</p>
-                        </div>
+                    <div class="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <p class="text-sm text-amber-700 font-medium">${standbyReason}</p>
                     </div>
                 ` : match.status === 'no_location' ? `
-                    <div class="result-connection" style="opacity: 0.7;">
-                        <div class="connection-details">
-                            <p style="color: #999; font-size: 15px; margin: 0; font-weight: 600;">${standbyReason} - set aside for later</p>
-                        </div>
-                    </div>
-                ` : ''}
-                <div class="result-reason" style="margin-top: 8px; font-size: 12px; color: #666;">${match.reason || 'No reason provided'}</div>
-                ${match.status === 'matched' || match.status === 'scheduled' || match.status === 'completed' ? `
-                    <div style="margin-top: 12px; display: flex; gap: 8px;">
-                        <button onclick="event.stopPropagation(); markMatchAsScheduled('${match.clientId}')" 
-                                class="action-btn secondary" style="flex: 1; padding: 8px 12px; font-size: 12px;">
-                            Mark as Scheduled
-                        </button>
-                        <button onclick="event.stopPropagation(); markMatchAsCompleted('${match.clientId}')" 
-                                class="action-btn secondary" style="flex: 1; padding: 8px 12px; font-size: 12px;">
-                            Mark as Completed
-                        </button>
-                    </div>
-                ` : match.status === 'scheduled' ? `
-                    <div style="margin-top: 12px;">
-                        <button onclick="event.stopPropagation(); markMatchAsCompleted('${match.clientId}')" 
-                                class="action-btn secondary" style="width: 100%; padding: 8px 12px; font-size: 12px;">
-                            Mark as Completed
-                        </button>
-                        ${match.scheduledAt ? `<div style="margin-top: 6px; font-size: 12px; color: #666;">Scheduled: ${new Date(match.scheduledAt).toLocaleString()}</div>` : ''}
-                    </div>
-                ` : match.status === 'completed' ? `
-                    <div style="margin-top: 12px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
-                        <div style="font-size: 12px; color: #2e7d32; font-weight: 600;">COMPLETED</div>
-                        ${match.completedAt ? `<div style="margin-top: 4px; font-size: 11px; color: #666;">Completed: ${new Date(match.completedAt).toLocaleString()}</div>` : ''}
+                    <div class="mt-3 p-3 bg-slate-100 rounded-lg border border-slate-200">
+                        <p class="text-sm text-slate-600 font-medium">${standbyReason} - set aside for later</p>
                     </div>
                 ` : ''}
             </div>
@@ -1396,12 +1360,14 @@ async function toggleShowAllRoutes() {
     if (showAllRoutes) {
         // Show all matched routes
         btn.textContent = 'Hide All Routes';
-        btn.classList.add('active');
+        btn.classList.add('bg-rise-orange', 'text-white');
+        btn.classList.remove('bg-white', 'text-slate-700');
         await renderAllRoutes();
     } else {
         // Hide all routes, show only selected
         btn.textContent = 'Show All Routes';
-        btn.classList.remove('active');
+        btn.classList.remove('bg-rise-orange', 'text-white');
+        btn.classList.add('bg-white', 'text-slate-700');
         clearConnections();
         if (selectedMatchId) {
             const match = matchesData.matches.find(m => m.clientId === selectedMatchId);
