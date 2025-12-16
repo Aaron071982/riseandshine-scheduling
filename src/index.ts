@@ -101,6 +101,8 @@ async function main() {
           gender: r.gender || null,
           onboardingComplete: r.onboardingComplete || false,
           onboardingDocuments: r.onboardingDocuments || [],
+          fortyHourCourseComplete: r.fortyHourCourseComplete || false,
+          fortyHourCourseLink: r.fortyHourCourseLink || null,
           email: r.email,
           phone: r.phone
         })),

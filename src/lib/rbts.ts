@@ -17,6 +17,8 @@ export type RBT = {
   phone?: string | null;
   onboardingComplete?: boolean;
   onboardingDocuments?: string[];
+  fortyHourCourseComplete?: boolean;
+  fortyHourCourseLink?: string | null;
 };
 
 /**
@@ -27,7 +29,7 @@ export async function getActiveRBTs(): Promise<RBT[]> {
     // Fetch RBTs using the correct column names from the schema
     const { data, error } = await supabaseServer
       .from('rbt_profiles')
-      .select('id, firstName, lastName, phoneNumber, email, locationCity, locationState, zipCode, addressLine1, addressLine2, status');
+      .select('id, firstName, lastName, phoneNumber, email, locationCity, locationState, zipCode, addressLine1, addressLine2, status, fortyHourCourseComplete, fortyHourCourseLink');
 
     if (error) {
       console.error('Error fetching RBTs from Supabase:', error);
@@ -98,7 +100,9 @@ export async function getActiveRBTs(): Promise<RBT[]> {
             email: row.email || null,
             phone: row.phoneNumber || null,
             onboardingComplete: false, // Will be set when documents are uploaded
-            onboardingDocuments: []
+            onboardingDocuments: [],
+            fortyHourCourseComplete: row.fortyHourCourseComplete || false,
+            fortyHourCourseLink: row.fortyHourCourseLink || null
           };
     });
 

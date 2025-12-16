@@ -1614,6 +1614,41 @@ function applySearchFilter() {
     }
 }
 
+// Handle onboarding document upload
+window.handleOnboardingUpload = function(event, rbtId) {
+    const file = event.target.files[0];
+    if (file) {
+        console.log(`Uploading onboarding document for RBT ${rbtId}: ${file.name}`);
+        // Simulate upload process
+        setTimeout(() => {
+            const rbtIndex = matchesData.rbts.findIndex(r => r.id === rbtId);
+            if (rbtIndex !== -1) {
+                matchesData.rbts[rbtIndex].onboardingComplete = true;
+                matchesData.rbts[rbtIndex].onboardingDocuments = [...(matchesData.rbts[rbtIndex].onboardingDocuments || []), { name: file.name, uploadedAt: new Date().toISOString() }];
+                renderRBTProfiles();
+                alert(`Onboarding documents for ${matchesData.rbts[rbtIndex].name} uploaded successfully! Onboarding marked as complete.`);
+            }
+        }, 1500);
+    }
+};
+
+// Handle 40-hour course certificate upload
+window.handleCourseUpload = function(event, rbtId) {
+    const file = event.target.files[0];
+    if (file) {
+        console.log(`Uploading 40-hour course certificate for RBT ${rbtId}: ${file.name}`);
+        // Simulate upload process
+        setTimeout(() => {
+            const rbtIndex = matchesData.rbts.findIndex(r => r.id === rbtId);
+            if (rbtIndex !== -1) {
+                matchesData.rbts[rbtIndex].fortyHourCourseComplete = true;
+                renderRBTProfiles();
+                alert(`40-hour course certificate for ${matchesData.rbts[rbtIndex].name} uploaded successfully! Course marked as complete.`);
+            }
+        }, 1500);
+    }
+};
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
