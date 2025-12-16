@@ -15,8 +15,6 @@ export type RBT = {
   travelMode?: 'DRIVING' | 'TRANSIT' | 'HYBRID';
   email?: string | null;
   phone?: string | null;
-  onboardingComplete?: boolean;
-  onboardingDocuments?: string[];
   fortyHourCourseComplete?: boolean;
   fortyHourCourseLink?: string | null;
 };
@@ -112,8 +110,6 @@ export async function getActiveRBTs(): Promise<RBT[]> {
             travelMode: (transportMode === 'Both' ? 'HYBRID' : transportMode === 'Transit' ? 'TRANSIT' : 'DRIVING') as 'DRIVING' | 'TRANSIT' | 'HYBRID',
             email: row.email || null,
             phone: row.phoneNumber || null,
-            onboardingComplete: false, // Will be set when documents are uploaded
-            onboardingDocuments: [],
             // Try to get 40-hour course fields if they exist (may not be in all schemas)
             fortyHourCourseComplete: (row as any).fortyHourCourseCompleted !== undefined ? (row as any).fortyHourCourseCompleted : false,
             fortyHourCourseLink: (row as any).fortyHourCourseLink || null

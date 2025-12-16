@@ -308,22 +308,6 @@ function renderRBTProfiles() {
                         <span><strong>Gender:</strong> ${rbt.gender}</span>
                     </div>
                     ` : ''}
-                    <div class="profile-item-detail">
-                        <span class="profile-item-detail-icon"></span>
-                        <span><strong>Onboarding:</strong> ${rbt.onboardingComplete ? 'Complete' : 'Pending'}</span>
-                    </div>
-                    ${!rbt.onboardingComplete ? `
-                    <div class="profile-item-detail" style="margin-top: 8px;">
-                        <input type="file" id="onboarding-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleOnboardingUpload(event, '${rbt.id}')">
-                        <button onclick="document.getElementById('onboarding-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
-                            Upload Onboarding Documents
-                        </button>
-                    </div>
-                    ` : `
-                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
-                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
-                    </div>
-                    `}
                     <div class="profile-item-detail" style="margin-top: 8px;">
                         <span class="profile-item-detail-icon"></span>
                         <span><strong>40-Hour Course:</strong> ${rbt.fortyHourCourseComplete ? 'Complete' : 'Not Complete'}</span>
@@ -474,22 +458,6 @@ function renderRBTProfiles() {
                         <span><strong>Gender:</strong> ${rbt.gender}</span>
                     </div>
                     ` : ''}
-                    <div class="profile-item-detail">
-                        <span class="profile-item-detail-icon"></span>
-                        <span><strong>Onboarding:</strong> ${rbt.onboardingComplete ? 'Complete' : 'Pending'}</span>
-                    </div>
-                    ${!rbt.onboardingComplete ? `
-                    <div class="profile-item-detail" style="margin-top: 8px;">
-                        <input type="file" id="onboarding-${rbt.id}" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple style="display: none;" onchange="handleOnboardingUpload(event, '${rbt.id}')">
-                        <button onclick="document.getElementById('onboarding-${rbt.id}').click()" class="action-btn secondary" style="padding: 6px 12px; font-size: 12px; width: 100%;">
-                            Upload Onboarding Documents
-                        </button>
-                    </div>
-                    ` : `
-                    <div class="profile-item-detail" style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
-                        <span style="font-size: 12px; color: #2e7d32; font-weight: 600;">Onboarding Complete</span>
-                    </div>
-                    `}
                     <div class="profile-item-detail" style="margin-top: 8px;">
                         <span class="profile-item-detail-icon"></span>
                         <span><strong>40-Hour Course:</strong> ${rbt.fortyHourCourseComplete ? 'Complete' : 'Not Complete'}</span>
@@ -1661,24 +1629,6 @@ function applySearchFilter() {
         }, 100);
     }
 }
-
-// Handle onboarding document upload
-window.handleOnboardingUpload = function(event, rbtId) {
-    const file = event.target.files[0];
-    if (file) {
-        console.log(`Uploading onboarding document for RBT ${rbtId}: ${file.name}`);
-        // Simulate upload process
-        setTimeout(() => {
-            const rbtIndex = matchesData.rbts.findIndex(r => r.id === rbtId);
-            if (rbtIndex !== -1) {
-                matchesData.rbts[rbtIndex].onboardingComplete = true;
-                matchesData.rbts[rbtIndex].onboardingDocuments = [...(matchesData.rbts[rbtIndex].onboardingDocuments || []), { name: file.name, uploadedAt: new Date().toISOString() }];
-                renderRBTProfiles();
-                alert(`Onboarding documents for ${matchesData.rbts[rbtIndex].name} uploaded successfully! Onboarding marked as complete.`);
-            }
-        }, 1500);
-    }
-};
 
 // Handle 40-hour course certificate upload
 window.handleCourseUpload = function(event, rbtId) {

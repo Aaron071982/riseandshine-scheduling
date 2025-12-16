@@ -99,8 +99,6 @@ async function main() {
           zip: r.zip,
           transportMode: r.transport_mode || 'Both',
           gender: r.gender || null,
-          onboardingComplete: r.onboardingComplete || false,
-          onboardingDocuments: r.onboardingDocuments || [],
           fortyHourCourseComplete: r.fortyHourCourseComplete || false,
           fortyHourCourseLink: r.fortyHourCourseLink || null,
           email: r.email,
