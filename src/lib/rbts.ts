@@ -28,9 +28,11 @@ export async function getActiveRBTs(): Promise<RBT[]> {
   try {
     // Fetch RBTs using the correct column names from the schema
     // Try with optional 40-hour course fields first, fallback if they don't exist
-    let { data, error } = await supabaseServer
+    let query = supabaseServer
       .from('rbt_profiles')
       .select('id, firstName, lastName, phoneNumber, email, locationCity, locationState, zipCode, addressLine1, addressLine2, status, fortyHourCourseCompleted, fortyHourCourseLink');
+    
+    let { data, error } = await query;
 
     // If columns don't exist, try without them
     if (error && error.code === '42703') {
@@ -38,7 +40,7 @@ export async function getActiveRBTs(): Promise<RBT[]> {
       const retry = await supabaseServer
         .from('rbt_profiles')
         .select('id, firstName, lastName, phoneNumber, email, locationCity, locationState, zipCode, addressLine1, addressLine2, status');
-      data = retry.data;
+      data = retry.data as any;
       error = retry.error;
     }
 
@@ -113,8 +115,8 @@ export async function getActiveRBTs(): Promise<RBT[]> {
             onboardingComplete: false, // Will be set when documents are uploaded
             onboardingDocuments: [],
             // Try to get 40-hour course fields if they exist (may not be in all schemas)
-            fortyHourCourseComplete: (row.fortyHourCourseCompleted !== undefined) ? row.fortyHourCourseCompleted : false,
-            fortyHourCourseLink: row.fortyHourCourseLink || null
+            fortyHourCourseComplete: (row as any).fortyHourCourseCompleted !== undefined ? (row as any).fortyHourCourseCompleted : false,
+            fortyHourCourseLink: (row as any).fortyHourCourseLink || null
           };
     });
 
