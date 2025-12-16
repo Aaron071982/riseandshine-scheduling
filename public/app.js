@@ -9,7 +9,8 @@ let directionsRenderers = []; // Store DirectionsRenderer instances
 let infoWindows = [];
 let geocodedAddresses = new Map(); // Cache geocoded addresses
 let routeCache = new Map(); // Cache route results by match ID
-let selectedMatchId = null; // Track selected match for showing connections
+let selectedMatchId = null;
+let selectedMatch = null; // Track selected match for showing connections
 let showAllRoutes = false; // Toggle for showing all routes
 
 // Initialize the application
@@ -955,15 +956,113 @@ window.showConnectionsForMatch = function(clientId) {
     }
 };
 
-// Global function to select a match (for clicking on result cards)
-window.selectMatch = function(clientId) {
-    const match = matchesData.matches.find(m => m.clientId === clientId);
-    if (match && match.status === 'matched') {
-        showConnections(match);
-        // Scroll map into view
-        document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+// Global function to select a match card
+function selectMatchCard(clientId) {
+    selectedMatchId = clientId;
+    selectedMatch = matchesData.matches.find(m => m.clientId === clientId);
+    
+    // Re-render results to show selected state
+    renderResults();
+    
+    // Show selected match details panel
+    renderSelectedMatchDetails();
+    
+    // Update map summary
+    updateMapSummary();
+    
+    // Show connections on map if matched
+    if (selectedMatch && (selectedMatch.status === 'matched' || selectedMatch.status === 'scheduled' || selectedMatch.status === 'completed')) {
+        showConnections(selectedMatch);
     }
-};
+}
+
+// Global function to select a match (for clicking on result cards) - kept for compatibility
+window.selectMatch = selectMatchCard;
+
+// Render selected match details panel
+function renderSelectedMatchDetails() {
+    const panel = document.getElementById('selected-match-details');
+    if (!panel) return;
+    
+    if (!selectedMatch) {
+        panel.classList.add('hidden');
+        return;
+    }
+    
+    panel.classList.remove('hidden');
+    
+    const travelMode = selectedMatch.travelMode || (selectedMatch.rbtTransportMode === 'Transit' ? 'transit' : selectedMatch.rbtTransportMode === 'Both' ? 'driving' : 'driving');
+    const travelModeDisplay = travelMode === 'transit' ? 'Transit' : 'Driving';
+    
+    panel.innerHTML = `
+        <div class="selected-match-details">
+            <div class="selected-match-section">
+                <div class="selected-match-section-title">Client</div>
+                <div class="selected-match-info">${selectedMatch.clientName}</div>
+                <div class="text-xs text-slate-500 mt-1">${selectedMatch.clientLocation || 'Unknown'}${selectedMatch.clientZip ? ` • ${selectedMatch.clientZip}` : ''}</div>
+            </div>
+            ${selectedMatch.rbtName ? `
+            <div class="selected-match-section">
+                <div class="selected-match-section-title">Assigned RBT</div>
+                <div class="selected-match-info">${selectedMatch.rbtName}</div>
+                <div class="text-xs text-slate-500 mt-1">${selectedMatch.rbtLocation || selectedMatch.rbtZip || 'Unknown'}</div>
+            </div>
+            ` : ''}
+            ${selectedMatch.travelTimeMinutes ? `
+            <div class="selected-match-section">
+                <div class="selected-match-section-title">Route Summary</div>
+                <div class="flex items-center gap-4 text-sm">
+                    <div>
+                        <span class="text-slate-500">Distance:</span>
+                        <span class="font-semibold ml-1">${selectedMatch.distanceMiles ? selectedMatch.distanceMiles.toFixed(1) : 'N/A'} mi</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Time:</span>
+                        <span class="font-semibold ml-1 ${selectedMatch.travelTimeMinutes <= 30 ? 'text-green-600' : 'text-amber-600'}">${selectedMatch.travelTimeMinutes} min</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Mode:</span>
+                        <span class="font-semibold ml-1">${travelModeDisplay}</span>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+            <div class="flex gap-2 mt-2">
+                <button onclick="window.showConnectionsForMatch('${selectedMatch.clientId}')" 
+                        class="px-4 py-2 text-sm font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors">
+                    View on Map
+                </button>
+                ${selectedMatch.status === 'matched' ? `
+                <button onclick="markMatchAsScheduled('${selectedMatch.clientId}')" 
+                        class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
+                    Mark Scheduled
+                </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+// Update map summary chips
+function updateMapSummary() {
+    const summary = document.getElementById('selected-match-summary');
+    if (!summary || !selectedMatch) {
+        if (summary) summary.innerHTML = '';
+        return;
+    }
+    
+    if (selectedMatch.travelTimeMinutes) {
+        summary.innerHTML = `
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2 py-1 bg-slate-100 rounded text-xs font-medium text-slate-700">${selectedMatch.clientName}</span>
+                <span class="text-slate-400">→</span>
+                <span class="px-2 py-1 bg-slate-100 rounded text-xs font-medium text-slate-700">${selectedMatch.rbtName || 'N/A'}</span>
+                <span class="px-2 py-1 bg-green-50 rounded text-xs font-medium text-green-700">${selectedMatch.travelTimeMinutes} min</span>
+                <span class="px-2 py-1 bg-blue-50 rounded text-xs font-medium text-blue-700">${selectedMatch.distanceMiles ? selectedMatch.distanceMiles.toFixed(1) : 'N/A'} mi</span>
+            </div>
+        `;
+    }
+}
 
 // Render results list
 function renderResults() {
@@ -1021,27 +1120,15 @@ function renderResults() {
             standbyReason = match.clientNeedsLocation ? 'Client missing location' : 'RBT missing location';
         }
         
+        const isSelected = selectedMatchId === match.clientId;
         return `
-            <div class="result-card ${statusClass}" onclick="window.selectMatch('${match.clientId}')">
-                <div class="result-header">
-                    <div class="result-client-name">${match.clientName}</div>
-                    <div class="result-status ${statusClass}">${match.status.toUpperCase()}</div>
-                </div>
-                <div class="result-details">
-                    <div class="result-detail">
-                        <div class="result-label">Client Location</div>
-                        <div class="result-value">${match.clientLocation || 'Unknown'}</div>
-                        ${match.clientZip ? `<div class="result-address">Zip Code: ${match.clientZip}</div>` : ''}
-                        ${match.clientAddress ? `<div class="result-address">${match.clientAddress}</div>` : ''}
-                        ${match.clientNeedsLocation ? '<div class="result-address" style="color: #FF9800; font-weight: 600;">Needs location information</div>' : ''}
+            <div class="match-card ${isSelected ? 'selected' : ''}" onclick="selectMatchCard('${match.clientId}')">
+                <div class="match-card-header">
+                    <div>
+                        <div class="match-client-name">${match.clientName}</div>
+                        <div class="match-client-location">${match.clientLocation || 'Unknown'}${match.clientZip ? ` • ${match.clientZip}` : ''}</div>
                     </div>
-                    ${match.status === 'matched' && match.travelTimeMinutes ? `
-                    <div class="result-detail">
-                        <div class="result-label">Travel Time</div>
-                        <div class="result-value">${match.travelTimeMinutes} minutes</div>
-                        <div class="result-hours-badge">${match.travelTimeMinutes <= 30 ? 'Within Range' : 'Long Commute'}</div>
-                    </div>
-                    ` : ''}
+                    <span class="match-status-pill ${statusClass}">${match.status === 'matched' ? 'Matched' : match.status === 'scheduled' ? 'Scheduled' : match.status === 'completed' ? 'Completed' : match.status === 'standby' ? 'Standby' : 'Needs Location'}</span>
                 </div>
                 ${match.status === 'matched' || match.status === 'scheduled' || match.status === 'completed' ? `
                     <div class="result-connection">
@@ -1082,8 +1169,8 @@ function renderResults() {
                             `}
                         </div>
                         <button onclick="event.stopPropagation(); window.showConnectionsForMatch('${match.clientId}')" 
-                                class="show-connection-btn">
-                            Show on Map
+                                class="match-action-btn primary">
+                            View on Map
                         </button>
                     </div>
                 ` : match.status === 'standby' ? `
