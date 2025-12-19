@@ -1,0 +1,222 @@
+/* Status Management Component Styles */
+
+.status-management-section {
+    position: relative;
+    padding: 20px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.status-confirmation-panel {
+    margin-top: 16px;
+    padding: 16px;
+    background: #f8fafc;
+    border: 2px solid #FF6B35;
+    border-radius: 8px;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.status-confirmation-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.status-confirmation-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.status-confirmation-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.status-change-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 14px;
+}
+
+.status-label {
+    font-weight: 500;
+    color: #64748b;
+    min-width: 100px;
+}
+
+.status-value {
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+
+.status-value.old-status {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.status-value.new-status {
+    background: #FF6B35;
+    color: white;
+}
+
+.status-warning {
+    margin-top: 12px;
+    padding: 12px;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #856404;
+}
+
+.status-confirmation-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.btn-confirm-status {
+    flex: 1;
+    padding: 10px 16px;
+    background: #FF6B35;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-confirm-status:hover:not(:disabled) {
+    background: #E55A2B;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
+}
+
+.btn-confirm-status:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-cancel-status {
+    flex: 1;
+    padding: 10px 16px;
+    background: white;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-cancel-status:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #94a3b8;
+}
+
+.btn-cancel-status:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.status-success-message {
+    margin-top: 12px;
+    padding: 12px 16px;
+    background: #d1fae5;
+    border: 1px solid #10b981;
+    border-radius: 6px;
+    color: #065f46;
+    font-weight: 500;
+    font-size: 14px;
+    animation: slideDown 0.3s ease-out;
+}
+
+/* Status dropdown styling */
+#status-dropdown {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+#status-dropdown:focus {
+    outline: none;
+    border-color: #FF6B35;
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.1);
+}
+
+#status-dropdown:hover {
+    border-color: #94a3b8;
+}
+
+/* Action buttons styling */
+#mark-hired-btn,
+#reject-candidate-btn,
+#delete-rbt-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#mark-hired-btn {
+    background: #10b981;
+    color: white;
+}
+
+#mark-hired-btn:hover {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+#reject-candidate-btn {
+    background: #ef4444;
+    color: white;
+}
+
+#reject-candidate-btn:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+#delete-rbt-btn {
+    background: #ef4444;
+    color: white;
+}
+
+#delete-rbt-btn:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
