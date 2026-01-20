@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scheduling AI - Rise & Shine CRM</title>
+    <title>Scheduling AI - Client Matching</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -19,9 +19,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="styles.css">
     <script src="config.js"></script>
-    <script src="schedule-time-config.js"></script>
     <script>
         function initGoogleMaps() {
             if (typeof google !== 'undefined' && google.maps) {
@@ -49,226 +47,151 @@
         }
     </script>
 </head>
-<body class="bg-slate-50">
-    <div class="min-h-screen">
-        <!-- Sticky Header -->
-        <header class="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
-            <div class="max-w-[1400px] mx-auto px-6 py-4">
+<body class="bg-gradient-to-br from-slate-50 to-slate-100">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
+            <div class="max-w-full mx-auto px-6 py-4">
                 <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <img src="logo.png" alt="Rise and Shine" class="h-10 w-auto" />
-                        <div>
-                            <h1 class="text-2xl font-bold text-slate-900">Scheduling AI</h1>
-                            <p class="text-sm text-slate-500">Matching Dashboard</p>
-                        </div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900">Scheduling AI</h1>
+                        <p class="text-sm text-slate-500 mt-0.5">Client Matching & RBT Assignment</p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <button onclick="markAllMatchedAsScheduled()" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
-                            Mark All Scheduled
-                        </button>
-                        <button onclick="exportSchedule()" class="px-4 py-2 text-sm font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors shadow-sm">
-                            Export Schedule
-                        </button>
+                    <div class="flex items-center gap-4">
+                        <div class="text-sm text-slate-600">
+                            <span id="rbt-count" class="font-semibold text-slate-900">-</span>
+                            <span class="text-slate-500 ml-1">RBTs Available</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- Main Container -->
-        <div class="max-w-[1400px] mx-auto px-6 py-6">
-            <!-- KPI Strip -->
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Clients</span>
-                        <div class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                            <span class="text-slate-400 text-xs">👥</span>
+        <!-- Main Content -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Left Sidebar: Client Form & Results -->
+            <aside class="w-96 bg-white border-r border-slate-200 flex flex-col shadow-lg">
+                <!-- Add Client Form -->
+                <div class="p-6 border-b border-slate-200 bg-gradient-to-br from-white to-slate-50">
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="w-8 h-8 rounded-lg bg-rise-orange/10 flex items-center justify-center">
+                            <span class="text-rise-orange text-lg">➕</span>
                         </div>
+                        <h2 class="text-lg font-semibold text-slate-900">Add Client</h2>
                     </div>
-                    <div class="text-2xl font-bold text-slate-900" id="total-clients">-</div>
-                </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Matched</span>
-                        <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center">
-                            <span class="text-green-600 text-xs">✓</span>
+                    <form id="client-form" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1.5 uppercase tracking-wide">Name *</label>
+                            <input type="text" id="client-name" required
+                                   class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rise-orange/20 focus:border-rise-orange transition-all shadow-sm"
+                                   placeholder="Enter client name">
                         </div>
-                    </div>
-                    <div class="text-2xl font-bold text-green-600" id="matched-count">-</div>
-                </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Scheduled</span>
-                        <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
-                            <span class="text-blue-600 text-xs">📅</span>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1.5 uppercase tracking-wide">Address *</label>
+                            <input type="text" id="client-address" required
+                                   class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rise-orange/20 focus:border-rise-orange transition-all shadow-sm"
+                                   placeholder="Street address">
                         </div>
-                    </div>
-                    <div class="text-2xl font-bold text-blue-600" id="scheduled-count">-</div>
-                </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Completed</span>
-                        <div class="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center">
-                            <span class="text-green-600 text-xs">✓</span>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-700 mb-1.5 uppercase tracking-wide">Zip Code *</label>
+                            <input type="text" id="client-zip" required
+                                   class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rise-orange/20 focus:border-rise-orange transition-all shadow-sm"
+                                   placeholder="Zip code">
                         </div>
-                    </div>
-                    <div class="text-2xl font-bold text-green-600" id="completed-count">-</div>
+                        <button type="submit" id="add-client-btn" 
+                                class="w-full px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-rise-orange to-rise-orange-dark rounded-lg hover:shadow-md transition-all">
+                            ➕ Add Client
+                        </button>
+                    </form>
                 </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Standby</span>
-                        <div class="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
-                            <span class="text-amber-600 text-xs">⏳</span>
-                        </div>
-                    </div>
-                    <div class="text-2xl font-bold text-amber-600" id="standby-count">-</div>
-                </div>
-                
-                <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">Active RBTs</span>
-                        <div class="w-8 h-8 rounded-full bg-rise-orange/10 flex items-center justify-center">
-                            <span class="text-rise-orange text-xs">👤</span>
-                        </div>
-                    </div>
-                    <div class="text-2xl font-bold text-slate-900" id="total-rbts">-</div>
-                </div>
-            </div>
 
-            <!-- Main Content: 2-Column Layout -->
-            <div class="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-6">
-                <!-- Left: Map Section (Dominant) -->
-                <section class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <!-- Map Header -->
-                    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/50">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h2 class="text-lg font-semibold text-slate-900">Interactive Map</h2>
-                                <p class="text-sm text-slate-500 mt-0.5">Route visualization and match details</p>
+                <!-- Simulation Section -->
+                <div class="p-6 border-b border-slate-200 bg-gradient-to-br from-white to-slate-50">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                                <span class="text-blue-600 text-lg">🎯</span>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <button id="show-all-connections-btn" onclick="toggleShowAllRoutes()" class="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors">
-                                    Show All Routes
-                                </button>
-                            </div>
+                            <h2 class="text-lg font-semibold text-slate-900">Simulation</h2>
                         </div>
                     </div>
-                    
-                    <!-- Map Container -->
-                    <div id="map" class="w-full" style="height: 600px;"></div>
-                    
-                    <!-- Map Controls & Legend -->
-                    <div class="px-6 py-4 border-t border-slate-200 bg-slate-50/50">
-                        <div class="flex items-center justify-between flex-wrap gap-4">
-                            <div class="flex items-center gap-4 text-sm">
-                                <span class="text-slate-600 font-medium">Legend:</span>
-                                <div class="flex items-center gap-2">
-                                    <span class="w-3 h-3 rounded-full bg-rise-orange"></span>
-                                    <span class="text-slate-600">Clients</span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="w-3 h-3 rounded-full bg-slate-500"></span>
-                                    <span class="text-slate-600">RBTs</span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="w-8 h-0.5 bg-green-500"></span>
-                                    <span class="text-slate-600">Matched</span>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="w-8 h-0.5 bg-amber-400 border-dashed border-t-2"></span>
-                                    <span class="text-slate-600">Standby</span>
-                                </div>
-                            </div>
-                            <!-- Selected Match Summary (will be populated dynamically) -->
-                            <div id="selected-match-summary" class="flex items-center gap-2 text-sm text-slate-600">
-                                <!-- Will be populated when match is selected -->
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Right: Matching Results Panel -->
-                <section class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col" style="max-height: 800px;">
-                    <!-- Results Header -->
-                    <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/50">
-                        <h2 class="text-lg font-semibold text-slate-900 mb-4">Matching Results</h2>
-                        
-                        <!-- Search -->
-                        <div class="relative mb-4">
-                            <input type="text" id="search-input" 
-                                   class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rise-orange/20 focus:border-rise-orange transition-colors" 
-                                   placeholder="Search by client or RBT name...">
-                            <div id="search-suggestions" class="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg hidden"></div>
-                        </div>
-                        
-                        <!-- Filters -->
-                        <div class="flex flex-wrap gap-2">
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors active" data-filter="all">All</button>
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors" data-filter="matched">Matched</button>
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors" data-filter="scheduled">Scheduled</button>
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors" data-filter="completed">Completed</button>
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors" data-filter="standby">Standby</button>
-                            <button class="filter-btn px-3 py-1.5 text-xs font-medium rounded-lg transition-colors" data-filter="no_location">Needs Location</button>
-                        </div>
-                        
-                        <!-- Results Count -->
-                        <div class="mt-4 text-xs text-slate-500">
-                            Showing <span id="results-count-number" class="font-medium">0</span> of <span id="results-total-number" class="font-medium">0</span> matches
-                        </div>
-                    </div>
-                    
-                    <!-- Selected Match Details Panel (shown when match is selected) -->
-                    <div id="selected-match-details" class="px-6 py-4 border-b border-slate-200 bg-rise-orange/5 hidden">
-                        <!-- Will be populated dynamically -->
-                    </div>
-                    
-                    <!-- Results List -->
-                    <div id="results-list" class="flex-1 overflow-y-auto px-6 py-4">
-                        <!-- Results will be populated here -->
-                    </div>
-                </section>
-            </div>
-
-            <!-- Collapsible Sections: Profiles & Logs -->
-            <div class="mt-6 space-y-4">
-                <!-- RBT & Client Profiles -->
-                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <button onclick="toggleSection('profiles')" class="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                        <h3 class="text-base font-semibold text-slate-900">RBT & Client Profiles</h3>
-                        <span class="text-slate-400 text-sm" id="profiles-icon">▼</span>
+                    <button onclick="runSimulation()" id="run-simulation-btn"
+                            class="w-full px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg hover:shadow-md transition-all">
+                        ▶ Run Simulation
                     </button>
-                    <div id="profiles-content" class="px-6 pb-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <h4 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">RBT Profiles</h4>
-                                <div id="rbt-profiles" class="space-y-2 max-h-96 overflow-y-auto"></div>
+                    <div id="simulation-status" class="text-xs text-slate-600 mt-3 min-h-[20px]"></div>
+                </div>
+
+                <!-- Tab Navigation -->
+                <div class="flex border-b border-slate-200 bg-white">
+                    <button onclick="switchResultsTab('current')" id="tab-current" 
+                            class="flex-1 px-4 py-3 text-sm font-medium text-slate-700 bg-white border-b-2 border-rise-orange transition-colors">
+                        Current
+                    </button>
+                    <button onclick="switchResultsTab('history')" id="tab-history"
+                            class="flex-1 px-4 py-3 text-sm font-medium text-slate-500 bg-white border-b-2 border-transparent hover:text-slate-700 transition-colors">
+                        History
+                    </button>
+                </div>
+
+                <!-- Results Section -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div id="results-current">
+                        <h2 class="text-lg font-semibold text-slate-900 mb-4">Match Results</h2>
+                        <div id="results-container">
+                            <div class="text-center text-slate-500 py-8">
+                                <p class="text-sm">Add a client and run simulation to see matches</p>
                             </div>
-                            <div>
-                                <h4 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Client Profiles</h4>
-                                <div id="client-profiles" class="space-y-2 max-h-96 overflow-y-auto"></div>
+                        </div>
+                    </div>
+
+                    <div id="results-history" class="hidden">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-slate-900">History</h2>
+                            <div class="flex gap-2">
+                                <button onclick="loadHistory('approved')" class="px-3 py-1 text-xs font-medium rounded-lg bg-green-100 text-green-700 hover:bg-green-200 transition-colors">Approved</button>
+                                <button onclick="loadHistory('rejected')" class="px-3 py-1 text-xs font-medium rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors">Rejected</button>
+                                <button onclick="loadHistory('deferred')" class="px-3 py-1 text-xs font-medium rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors">Deferred</button>
+                                <button onclick="loadHistory('all')" class="px-3 py-1 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors">All</button>
+                            </div>
+                        </div>
+                        <div id="history-container">
+                            <div class="text-center text-slate-500 py-8">
+                                <p class="text-sm">No history yet</p>
                             </div>
                         </div>
                     </div>
                 </div>
+            </aside>
 
-                <!-- Activity Logs -->
-                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <button onclick="toggleSection('logs')" class="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                        <h3 class="text-base font-semibold text-slate-900">Activity Logs</h3>
-                        <span class="text-slate-400 text-sm" id="logs-icon">▼</span>
-                    </button>
-                    <div id="logs-content" class="px-6 pb-4 hidden">
-                        <div id="activity-logs" class="space-y-2 max-h-96 overflow-y-auto"></div>
+            <!-- Right: Map -->
+            <main class="flex-1 flex flex-col bg-white">
+                <div id="map" class="flex-1" style="min-height: 600px;"></div>
+                <div class="bg-gradient-to-r from-slate-50 to-white border-t border-slate-200 px-6 py-4">
+                    <div class="flex items-center gap-8 text-sm flex-wrap">
+                        <span class="text-slate-700 font-semibold">Legend:</span>
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full bg-slate-500 shadow-sm"></span>
+                            <span class="text-slate-600">RBT (Available)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full bg-orange-500 shadow-sm"></span>
+                            <span class="text-slate-600">RBT (Locked)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-5 h-5 rounded-full bg-rise-orange shadow-sm"></span>
+                            <span class="text-slate-600">Client</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-10 h-1 bg-green-500 rounded shadow-sm"></span>
+                            <span class="text-slate-600">Match</span>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </main>
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app-simple.js"></script>
 </body>
 </html>

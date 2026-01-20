@@ -12,6 +12,43 @@ let routeCache = new Map(); // Cache route results by match ID
 let selectedMatchId = null;
 let selectedMatch = null; // Track selected match for showing connections
 let showAllRoutes = false; // Toggle for showing all routes
+let verificationMap = null; // Map for location verification modal
+let verificationMarker = null; // Draggable marker for verification
+
+// Expose global functions early (will be defined later)
+// This ensures onclick handlers in HTML can find them
+if (typeof window !== 'undefined') {
+    // Define stub functions that will be replaced with actual implementations
+    window.runMatchingNow = function() {
+        console.warn('runMatchingNow not yet initialized');
+    };
+    window.refreshData = function() {
+        console.warn('refreshData not yet initialized');
+    };
+}
+
+// Location quality helper function
+function getLocationQuality(precision, confidence) {
+    // Manual pin is always good
+    if (precision === 'manual_pin') return 'good';
+    
+    // ROOFTOP or RANGE_INTERPOLATED with good confidence
+    if ((precision === 'ROOFTOP' || precision === 'RANGE_INTERPOLATED') && 
+        (confidence === null || confidence === undefined || confidence >= 0.7)) {
+        return 'good';
+    }
+    
+    // GEOMETRIC_CENTER (ZIP centroid) is medium
+    if (precision === 'GEOMETRIC_CENTER') return 'medium';
+    
+    // APPROXIMATE or missing is bad
+    if (precision === 'APPROXIMATE' || !precision) return 'bad';
+    
+    // Low confidence is medium at best
+    if (confidence !== null && confidence !== undefined && confidence < 0.5) return 'medium';
+    
+    return 'medium';
+}
 
 // Initialize the application
 async function init() {
@@ -33,10 +70,16 @@ async function init() {
         });
         
         // Initialize UI
-        updateStats();
+        updateStats(); // Also updates KPIs
         renderRBTProfiles();
         renderClientProfiles();
         renderActivityLogs();
+        
+        // Initialize filteredMatches with all matches first
+        if (matchesData && matchesData.matches) {
+            filteredMatches = matchesData.matches;
+        }
+        
         renderResults();
         setupCollapsibleSections();
         setupSearch();
@@ -79,15 +122,23 @@ async function init() {
         
     } catch (error) {
         console.error('❌ Error loading data:', error);
+        // Try to show error in results list (check both possible locations)
         const resultsList = document.getElementById('results-list');
         if (resultsList) {
             resultsList.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">Error</div>
-                    <p style="font-size: 16px; color: #666;">Error loading data: ${error.message}</p>
-                    <p style="font-size: 12px; color: #999; margin-top: 10px;">Check browser console for details</p>
+                <div class="empty-state" style="padding: 40px; text-align: center;">
+                    <div style="font-size: 48px; color: #ccc; margin-bottom: 16px;">⚠️</div>
+                    <p style="font-size: 16px; color: #666; margin-bottom: 8px;">Error loading data: ${error.message}</p>
+                    <p style="font-size: 12px; color: #999;">Check browser console for details</p>
+                    <button onclick="location.reload()" style="margin-top: 16px; padding: 8px 16px; background: var(--rise-orange); color: white; border: none; border-radius: 6px; cursor: pointer;">Reload Page</button>
                 </div>
             `;
+        }
+        // Also update stats to show zeros if possible
+        try {
+            updateStats();
+        } catch (statsError) {
+            console.error('Error updating stats:', statsError);
         }
     }
 }
@@ -258,21 +309,36 @@ function updateStats() {
     
     const matches = matchesData.matches || [];
     const summary = matchesData.summary || {};
-    const matchedCount = matches.filter(m => m.status === 'matched').length;
-    const scheduledCount = matches.filter(m => m.status === 'scheduled').length;
-    const completedCount = matches.filter(m => m.status === 'completed').length;
-    const standbyCount = matches.filter(m => m.status === 'standby').length;
+    // Count both 'matched' and 'needs_review' as matched (needs_review still means they're matched)
+    const matchedCount = summary.matched || matches.filter(m => m.status === 'matched' || m.status === 'needs_review').length || 0;
+    const standbyCount = summary.standby || matches.filter(m => m.status === 'standby').length || 0;
+    const noLocationCount = summary.noLocation || matches.filter(m => m.status === 'no_location').length || 0;
     
-    document.getElementById('total-clients').textContent = summary.totalClients || matches.length || 0;
-    document.getElementById('matched-count').textContent = matchedCount;
+    // Update KPI cards (new layout)
+    const matchedEl = document.getElementById('matched-count');
+    if (matchedEl) matchedEl.textContent = matchedCount;
+    
+    const standbyEl = document.getElementById('standby-count');
+    if (standbyEl) standbyEl.textContent = standbyCount;
+    
+    const noLocationEl = document.getElementById('no-location-count');
+    if (noLocationEl) noLocationEl.textContent = noLocationCount;
+    
+    // Legacy elements (for backwards compatibility, check if they exist)
+    if (document.getElementById('total-clients')) {
+        document.getElementById('total-clients').textContent = summary.totalClients || matches.length || 0;
+    }
     if (document.getElementById('scheduled-count')) {
+        const scheduledCount = matches.filter(m => m.status === 'scheduled').length;
         document.getElementById('scheduled-count').textContent = scheduledCount;
     }
     if (document.getElementById('completed-count')) {
+        const completedCount = matches.filter(m => m.status === 'completed').length;
         document.getElementById('completed-count').textContent = completedCount;
     }
-    document.getElementById('standby-count').textContent = standbyCount;
-    document.getElementById('total-rbts').textContent = summary.totalRBTs || 0;
+    if (document.getElementById('total-rbts')) {
+        document.getElementById('total-rbts').textContent = summary.totalRBTs || 0;
+    }
 }
 
 // Render RBT Profiles
@@ -663,72 +729,95 @@ async function getDirectionsRoute(origin, destination, travelMode) {
 
 // Show connections for a specific match using Directions API
 async function showConnections(match) {
-    // Clear existing connections
+    // Clear existing connections first
     clearConnections();
     
-    if (!match || match.status !== 'matched' || !match.rbtLocation) {
+    // Treat 'needs_review' as matched for connection display
+    const isMatched = match.status === 'matched' || match.status === 'needs_review';
+    if (!match || !isMatched || !match.rbtName) {
         return;
     }
     
     selectedMatchId = match.clientId;
     
     try {
-        // Use client name + location for geocoding
-        const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
-        // Use RBT name + location for geocoding
-        const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
-        const clientLocation = await geocodeAddress(clientAddr);
-        const rbtLocation = await geocodeAddress(rbtAddr);
+        // Use coordinates directly if available (more accurate)
+        let clientLocation, rbtLocation;
         
-        if (!clientLocation || !rbtLocation) return;
+        if (match.clientLat && match.clientLng) {
+            clientLocation = { lat: match.clientLat, lng: match.clientLng };
+        } else {
+            // Fallback to geocoding
+            const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
+            clientLocation = await geocodeAddress(clientAddr);
+        }
+        
+        if (match.rbtLat && match.rbtLng) {
+            rbtLocation = { lat: match.rbtLat, lng: match.rbtLng };
+        } else {
+            // Fallback to geocoding
+            const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
+            rbtLocation = await geocodeAddress(rbtAddr);
+        }
+        
+        if (!clientLocation || !rbtLocation) {
+            console.warn('Missing coordinates for route display');
+            return;
+        }
         
         // Determine travel mode from match data
         const travelMode = match.travelMode || (match.rbtTransportMode === 'Transit' ? 'transit' : match.rbtTransportMode === 'Both' ? 'driving' : 'driving');
         const modeForDirections = travelMode === 'transit' ? google.maps.TravelMode.TRANSIT : google.maps.TravelMode.DRIVING;
         
-        // Get route from Directions API
+        // Get route from Directions API (actual routing, not straight line)
         try {
             const route = await getDirectionsRoute(
-                clientLocation,
-                rbtLocation,
+                rbtLocation,  // Origin: RBT location
+                clientLocation,  // Destination: Client location
                 travelMode
             );
             
-            // Create DirectionsRenderer
+            // Use backend travel time data (from Distance Matrix API) for consistency
+            const distance = match.distanceMiles || (route.routes[0].legs[0].distance.value / 1609.34);
+            const travelTime = match.travelTimeMinutes || Math.round(route.routes[0].legs[0].duration.value / 60);
+            const feasible = travelTime <= 30;
+            const routeColor = feasible ? '#4CAF50' : '#FF9800';
+            
+            // Create DirectionsRenderer with actual route
             const directionsRenderer = new google.maps.DirectionsRenderer({
                 map: map,
                 directions: route,
                 suppressMarkers: true, // We use our own markers
                 polylineOptions: {
-                    strokeColor: match.travelTimeMinutes && match.travelTimeMinutes <= 30 ? '#4CAF50' : '#FF9800',
-                    strokeWeight: 5,
-                    strokeOpacity: 0.8
-                }
+                    strokeColor: routeColor,
+                    strokeWeight: 6,
+                    strokeOpacity: 0.9
+                },
+                preserveViewport: false // Allow map to pan to show route
             });
             
             directionsRenderers.push(directionsRenderer);
             
-            // Use backend travel time data (from Distance Matrix API) instead of recalculating
-            // This ensures consistency with match cards
-            const distance = match.distanceMiles || (route.routes[0].legs[0].distance.value / 1609.34);
-            const travelTime = match.travelTimeMinutes || Math.round(route.routes[0].legs[0].duration.value / 60);
-            const feasible = travelTime <= 30;
-            
-            // Add midpoint marker with travel info
+            // Add route info window at midpoint
             const midLat = (clientLocation.lat + rbtLocation.lat) / 2;
             const midLng = (clientLocation.lng + rbtLocation.lng) / 2;
             
+            const transportModeText = match.rbtTransportMode === 'Car' ? 'Driving' : 
+                                     match.rbtTransportMode === 'Transit' ? 'Transit' : 
+                                     match.rbtTransportMode === 'Both' ? 'Driving' : 'Driving';
+            
             const connectionInfoWindow = new google.maps.InfoWindow({
                 content: `
-                    <div class="map-info-window" style="text-align: center; min-width: 200px;">
-                        <p style="margin: 4px 0; font-size: 14px; font-weight: 600;">Connection Details</p>
+                    <div class="map-info-window" style="text-align: center; min-width: 220px; padding: 8px;">
+                        <p style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: #333;">${match.rbtName} → ${match.clientName}</p>
                         <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
-                        <p style="margin: 4px 0; font-size: 14px;">Distance: <strong>${distance.toFixed(1)} miles</strong></p>
-                        <p style="margin: 4px 0; font-size: 14px;">Travel Time: <strong>${travelTime} minutes</strong></p>
-                        <p style="margin: 4px 0; font-size: 14px;">Mode: <strong>${match.travelMode === 'transit' ? 'Transit' : 'Driving'}</strong></p>
-                        <p style="margin: 4px 0; font-size: 13px; color: ${feasible ? '#4CAF50' : '#FF9800'}; font-weight: 600;">
-                            ${feasible ? 'Within 30 minutes' : 'Longer Commute'}
+                        <p style="margin: 4px 0; font-size: 13px;"><strong>Distance:</strong> ${distance.toFixed(1)} miles</p>
+                        <p style="margin: 4px 0; font-size: 13px;"><strong>Travel Time:</strong> ${travelTime} minutes</p>
+                        <p style="margin: 4px 0; font-size: 13px;"><strong>Mode:</strong> ${transportModeText}</p>
+                        <p style="margin: 6px 0 0 0; font-size: 12px; color: ${routeColor}; font-weight: 600;">
+                            ${feasible ? '✅ Within 30 minutes' : '⚠️ Longer commute'}
                         </p>
+                        ${match.reviewReason ? `<p style="margin: 4px 0; font-size: 11px; color: #FF9800;">⚠️ ${match.reviewReason}</p>` : ''}
                     </div>
                 `,
                 position: { lat: midLat, lng: midLng }
@@ -737,28 +826,33 @@ async function showConnections(match) {
             connectionInfoWindow.open(map);
             infoWindows.push(connectionInfoWindow);
             
-            // Pan to show route
-            const bounds = new google.maps.LatLngBounds();
-            route.routes[0].bounds.getNorthEast();
-            route.routes[0].bounds.getSouthWest();
-            map.fitBounds(route.routes[0].bounds);
+            // Pan and zoom to show the entire route
+            if (route.routes && route.routes[0] && route.routes[0].bounds) {
+                map.fitBounds(route.routes[0].bounds, {
+                    top: 50,
+                    right: 50,
+                    bottom: 50,
+                    left: 50
+                });
+            }
             
         } catch (directionsError) {
-            console.warn('Directions API failed, falling back to straight line:', directionsError);
-            // Fallback to straight line if Directions API fails
-            const line = new google.maps.Polyline({
-                path: [
-                    new google.maps.LatLng(clientLocation.lat, clientLocation.lng),
-                    new google.maps.LatLng(rbtLocation.lat, rbtLocation.lng)
-                ],
-                geodesic: true,
-                strokeColor: '#4CAF50',
-                strokeOpacity: 0.8,
-                strokeWeight: 5,
-                zIndex: 50
+            console.error('Directions API failed:', directionsError);
+            // Show error message instead of fallback line
+            const errorInfo = new google.maps.InfoWindow({
+                content: `
+                    <div class="map-info-window" style="text-align: center; min-width: 200px;">
+                        <p style="margin: 0; font-size: 14px; color: #FF9800;">⚠️ Could not load route</p>
+                        <p style="margin: 4px 0 0 0; font-size: 12px; color: #666;">${directionsError.message || 'Route calculation failed'}</p>
+                    </div>
+                `,
+                position: { 
+                    lat: (clientLocation.lat + rbtLocation.lat) / 2, 
+                    lng: (clientLocation.lng + rbtLocation.lng) / 2 
+                }
             });
-            line.setMap(map);
-            lines.push(line);
+            errorInfo.open(map);
+            infoWindows.push(errorInfo);
         }
         
     } catch (error) {
@@ -778,52 +872,74 @@ async function addMarkersAndLines() {
     const bounds = new google.maps.LatLngBounds();
     const geocodePromises = [];
     
-    // First, geocode all addresses (skip clients with no location)
-    for (const match of matchesData.matches) {
-        // Skip clients with no location information
+    // Filter matches based on current filter
+    // Treat 'needs_review' as matched for display purposes
+    const isMatched = (status) => status === 'matched' || status === 'needs_review';
+    const filteredMatchesForMap = matchesData.matches.filter(match => {
         if (match.status === 'no_location' || match.clientNeedsLocation) {
-            continue;
+            return false;
         }
-        
-        if (currentFilter !== 'all' && match.status !== currentFilter) {
-            continue;
+        if (currentFilter === 'all') {
+            return true;
+        } else if (currentFilter === 'matched') {
+            return isMatched(match.status);
+        } else {
+            return match.status === currentFilter;
         }
-        const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
-        geocodePromises.push(geocodeAddress(clientAddr));
-        if (match.status === 'matched' && match.rbtLocation && match.rbtName) {
+    });
+    
+    // First, geocode addresses that don't have coordinates yet
+    for (const match of filteredMatchesForMap) {
+        if (!match.clientLat || !match.clientLng) {
+            const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
+            geocodePromises.push(geocodeAddress(clientAddr).then(loc => {
+                if (loc) {
+                    match.clientLat = loc.lat;
+                    match.clientLng = loc.lng;
+                }
+            }));
+        }
+        if (isMatched(match.status) && match.rbtName && (!match.rbtLat || !match.rbtLng)) {
             const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
-            geocodePromises.push(geocodeAddress(rbtAddr));
+            geocodePromises.push(geocodeAddress(rbtAddr).then(loc => {
+                if (loc) {
+                    match.rbtLat = loc.lat;
+                    match.rbtLng = loc.lng;
+                }
+            }));
         }
     }
     
     // Wait for all geocoding to complete
     await Promise.all(geocodePromises);
     
+    // Store matched pairs for drawing lines
+    const matchedPairs = [];
+    
     // Now create markers
-    for (const match of matchesData.matches) {
-        // Skip clients with no location information
-        if (match.status === 'no_location' || match.clientNeedsLocation) {
-            continue;
-        }
-        
-        if (currentFilter !== 'all' && match.status !== currentFilter) {
-            continue;
-        }
-        
+    for (const match of filteredMatchesForMap) {
         try {
-            // Use client name + location for better unique positioning
-            const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
-            const clientLocation = await geocodeAddress(clientAddr);
-            if (!clientLocation) {
-                console.warn(`Failed to geocode client: ${match.clientName} at ${clientAddr}`);
-                continue;
+            // Use coordinates directly from match data if available
+            let clientLocation;
+            if (match.clientLat && match.clientLng) {
+                clientLocation = { lat: match.clientLat, lng: match.clientLng };
+            } else {
+                // Fallback to geocoding if coordinates not available
+                const clientAddr = match.clientAddress?.fullAddress || `${match.clientName}, ${match.clientLocation}`;
+                clientLocation = await geocodeAddress(clientAddr);
+                if (!clientLocation) {
+                    console.warn(`Failed to geocode client: ${match.clientName} at ${clientAddr}`);
+                    continue;
+                }
+                match.clientLat = clientLocation.lat;
+                match.clientLng = clientLocation.lng;
             }
             
             bounds.extend(new google.maps.LatLng(clientLocation.lat, clientLocation.lng));
             
             // Use backend travel time data if available (more accurate)
             let travelInfo = null;
-            if (match.status === 'matched' && match.rbtLocation) {
+            if (isMatched(match.status) && match.rbtName) {
                 // Prefer backend data (from Google Maps Distance Matrix API)
                 if (match.travelTimeMinutes && match.distanceMiles) {
                     travelInfo = {
@@ -831,14 +947,12 @@ async function addMarkersAndLines() {
                         time: match.travelTimeMinutes,
                         feasible: match.travelTimeMinutes <= 30
                     };
-                } else {
-                    // Fallback: calculate if backend data not available
-                    const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
-                    travelInfo = await calculateTravelInfo(
-                        clientAddr,
-                        rbtAddr,
-                        match.rbtTransportMode
-                    );
+                } else if (match.travelTimeSeconds && match.distanceMiles) {
+                    travelInfo = {
+                        distance: match.distanceMiles,
+                        time: Math.round(match.travelTimeSeconds / 60),
+                        feasible: (match.travelTimeSeconds / 60) <= 30
+                    };
                 }
             }
             
@@ -859,22 +973,23 @@ async function addMarkersAndLines() {
             });
             
             // Create client info window
+            const statusDisplay = match.status === 'needs_review' ? 'Matched (Needs Review)' : match.status;
+            const statusColor = isMatched(match.status) ? '#4CAF50' : '#FF9800';
             const clientInfoWindow = new google.maps.InfoWindow({
                 content: `
                     <div class="map-info-window">
                         <h3 style="margin: 0 0 8px 0; color: #FF6B35; font-size: 18px; font-weight: 600;">Client: ${match.clientName}</h3>
-                        <p style="margin: 4px 0; font-size: 12px; color: #666;">${match.clientAddress?.fullAddress || match.clientLocation}</p>
-                        <p style="margin: 4px 0; font-size: 12px;"><strong>Status:</strong> <span style="color: ${match.status === 'matched' ? '#4CAF50' : '#FF9800'};">${match.status}</span></p>
-                        <p style="margin: 4px 0; font-size: 12px;"><strong>Matched Hours:</strong> ${match.matchedHours}/20 hrs</p>
-                        ${match.status === 'matched' && travelInfo ? `
+                        <p style="margin: 4px 0; font-size: 12px; color: #666;">${match.clientAddress?.fullAddress || match.clientLocation || 'No address'}</p>
+                        <p style="margin: 4px 0; font-size: 12px;"><strong>Status:</strong> <span style="color: ${statusColor};">${statusDisplay}</span></p>
+                        ${isMatched(match.status) && match.rbtName && travelInfo ? `
                             <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
                             <p style="margin: 4px 0; font-size: 12px;"><strong>RBT:</strong> ${match.rbtName}</p>
-                            <p style="margin: 4px 0; font-size: 14px;"><strong>Travel:</strong> ${travelInfo.distance} miles, ${travelInfo.time} min (${match.rbtTransportMode})</p>
-                        <p style="margin: 4px 0; font-size: 13px; color: ${travelInfo.feasible ? '#4CAF50' : '#FF9800'}; font-weight: 600;">
-                            ${travelInfo.feasible ? 'Within feasible range' : 'Longer commute'}
-                        </p>
-                            <button onclick="window.showConnectionsForMatch('${match.clientId}')" style="margin-top: 8px; padding: 6px 12px; background: #FF6B35; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">Show Connection</button>
+                            <p style="margin: 4px 0; font-size: 14px;"><strong>Travel:</strong> ${travelInfo.distance?.toFixed(1) || 'N/A'} miles, ${travelInfo.time || 'N/A'} min</p>
+                            <p style="margin: 4px 0; font-size: 13px; color: ${travelInfo.feasible ? '#4CAF50' : '#FF9800'}; font-weight: 600;">
+                                ${travelInfo.feasible ? '✅ Within range' : '⚠️ Longer commute'}
+                            </p>
                         ` : ''}
+                        ${match.reviewReason ? `<p style="margin: 4px 0; font-size: 11px; color: #FF9800;">⚠️ ${match.reviewReason}</p>` : ''}
                     </div>
                 `
             });
@@ -883,8 +998,8 @@ async function addMarkersAndLines() {
                 // Close other info windows
                 infoWindows.forEach(iw => iw.close());
                 clientInfoWindow.open(map, clientMarker);
-                // Show connection if matched
-                if (match.status === 'matched') {
+                // Show route if matched
+                if (isMatched(match.status) && match.rbtName) {
                     showConnections(match);
                 } else {
                     clearConnections();
@@ -894,46 +1009,55 @@ async function addMarkersAndLines() {
             markers.push(clientMarker);
             infoWindows.push(clientInfoWindow);
             
-            // If matched, add RBT marker (only if RBT has valid location)
-            if (match.status === 'matched' && match.rbtLocation && match.rbtName) {
-                // Use RBT name + location for better unique positioning
-                const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
-                const rbtLocation = await geocodeAddress(rbtAddr);
+            // If matched, add RBT marker and store pair for line drawing
+            if (isMatched(match.status) && match.rbtName) {
+                let rbtLocation;
+                if (match.rbtLat && match.rbtLng) {
+                    rbtLocation = { lat: match.rbtLat, lng: match.rbtLng };
+                } else {
+                    // Fallback to geocoding if coordinates not available
+                    const rbtAddr = match.rbtAddress?.fullAddress || `${match.rbtName}, ${match.rbtLocation}`;
+                    rbtLocation = await geocodeAddress(rbtAddr);
+                    if (rbtLocation) {
+                        match.rbtLat = rbtLocation.lat;
+                        match.rbtLng = rbtLocation.lng;
+                    }
+                }
+                
                 if (rbtLocation) {
                     bounds.extend(new google.maps.LatLng(rbtLocation.lat, rbtLocation.lng));
                     
-                    // Create RBT marker (neutral grey/white color for RBTs)
+                    // Create RBT marker (neutral grey color for RBTs)
                     const rbtMarker = new google.maps.Marker({
                         position: rbtLocation,
                         map: map,
                         icon: {
                             path: google.maps.SymbolPath.CIRCLE,
-                            scale: 14, // Slightly larger for visibility
-                            fillColor: '#666666', // Neutral grey color
+                            scale: 14,
+                            fillColor: '#666666',
                             fillOpacity: 1,
                             strokeColor: '#FFFFFF',
                             strokeWeight: 3
                         },
-                        title: `RBT: ${match.rbtName} (${match.rbtLocation})`,
+                        title: `RBT: ${match.rbtName} (${match.rbtLocation || 'No location'})`,
                         zIndex: 101
                     });
                     
                     const transportModeText = match.rbtTransportMode === 'Car' ? 'Driving' : 
-                                         match.rbtTransportMode === 'Transit' ? 'Transit' : match.rbtTransportMode === 'Both' ? 'Both' : 'Car';
+                                         match.rbtTransportMode === 'Transit' ? 'Transit' : 
+                                         match.rbtTransportMode === 'Both' ? 'Both' : 'Car';
                     
                     const rbtInfoWindow = new google.maps.InfoWindow({
                         content: `
                             <div class="map-info-window">
                                 <h3 style="margin: 0 0 8px 0; color: #666666; font-size: 18px; font-weight: 600;">RBT: ${match.rbtName}</h3>
-                                <p style="margin: 4px 0; font-size: 12px; color: #666;">${match.rbtAddress?.fullAddress || match.rbtLocation}</p>
-                                    <p style="margin: 4px 0; font-size: 14px;"><strong>Transport:</strong> ${transportModeText}</p>
+                                <p style="margin: 4px 0; font-size: 12px; color: #666;">${match.rbtAddress?.fullAddress || match.rbtLocation || 'No address'}</p>
+                                <p style="margin: 4px 0; font-size: 14px;"><strong>Transport:</strong> ${transportModeText}</p>
                                 <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
                                 <p style="margin: 4px 0; font-size: 12px;"><strong>Client:</strong> ${match.clientName}</p>
                                 ${travelInfo ? `
-                                    <p style="margin: 4px 0; font-size: 14px;"><strong>Travel:</strong> ${travelInfo.distance} miles, ${travelInfo.time} min</p>
+                                    <p style="margin: 4px 0; font-size: 14px;"><strong>Travel:</strong> ${travelInfo.distance?.toFixed(1) || 'N/A'} miles, ${travelInfo.time || 'N/A'} min</p>
                                 ` : ''}
-                                <p style="margin: 4px 0; font-size: 12px;"><strong>Matched:</strong> ${match.matchedHours} hrs/week</p>
-                                <button onclick="window.showConnectionsForMatch('${match.clientId}')" style="margin-top: 8px; padding: 6px 12px; background: #FF6B35; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">Show Connection</button>
                             </div>
                         `
                     });
@@ -941,17 +1065,129 @@ async function addMarkersAndLines() {
                     rbtMarker.addListener('click', () => {
                         infoWindows.forEach(iw => iw.close());
                         rbtInfoWindow.open(map, rbtMarker);
-                        // Show connection
+                        // Show route when RBT marker is clicked
                         showConnections(match);
                     });
                     
                     markers.push(rbtMarker);
                     infoWindows.push(rbtInfoWindow);
+                    
+                    // Store the matched pair for drawing lines
+                    matchedPairs.push({
+                        clientLocation: clientLocation,
+                        rbtLocation: rbtLocation,
+                        clientMarker: clientMarker,
+                        rbtMarker: rbtMarker,
+                        match: match,
+                        travelInfo: travelInfo
+                    });
                 }
             }
             
         } catch (error) {
             console.error(`Error processing match for ${match.clientName}:`, error);
+        }
+    }
+    
+    // Store matched pairs for later route display (when clicked)
+    // Don't draw lines automatically - user will click to see actual route
+    console.log(`✅ Prepared ${matchedPairs.length} matched pairs for route display`);
+    
+    // Load and display paired clients from simulation workflow
+    await addSimulationPairingsToMap(bounds);
+    
+    // Fit map to show all markers
+    if (bounds.getNorthEast().lat() !== bounds.getSouthWest().lat()) {
+        map.fitBounds(bounds);
+        // Add padding for better view
+        const padding = { top: 50, right: 50, bottom: 50, left: 50 };
+        map.fitBounds(bounds, padding);
+    }
+    
+    // Add ALL RBTs to the map (not just matched ones)
+    if (matchesData.rbts && matchesData.rbts.length > 0) {
+        console.log(`📍 Adding ${matchesData.rbts.length} RBTs to map...`);
+        
+        for (const rbt of matchesData.rbts) {
+            // Skip RBTs without location data
+            if (!rbt.lat || !rbt.lng) {
+                // Try to geocode if we have location string
+                if (rbt.location) {
+                    try {
+                        const rbtLocation = await geocodeAddress(rbt.location);
+                        if (rbtLocation) {
+                            rbt.lat = rbtLocation.lat;
+                            rbt.lng = rbtLocation.lng;
+                        } else {
+                            console.warn(`Could not geocode RBT: ${rbt.name} at ${rbt.location}`);
+                            continue;
+                        }
+                    } catch (error) {
+                        console.warn(`Error geocoding RBT ${rbt.name}:`, error);
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
+            
+            // Check if this RBT is already added (from matched clients above)
+            const alreadyAdded = markers.some(m => {
+                const title = m.getTitle();
+                return title.includes(`RBT: ${rbt.name}`);
+            });
+            
+            if (alreadyAdded) {
+                continue; // Skip if already added from a match
+            }
+            
+            try {
+                const rbtPosition = new google.maps.LatLng(rbt.lat, rbt.lng);
+                bounds.extend(rbtPosition);
+                
+                // Create RBT marker (neutral grey color for RBTs)
+                const rbtMarker = new google.maps.Marker({
+                    position: rbtPosition,
+                    map: map,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 12, // Slightly smaller for unmatched RBTs
+                        fillColor: '#666666', // Neutral grey color
+                        fillOpacity: 0.8,
+                        strokeColor: '#FFFFFF',
+                        strokeWeight: 2
+                    },
+                    title: `RBT: ${rbt.name} (${rbt.location || 'No location'})`,
+                    zIndex: 50 // Lower z-index so matched RBTs appear on top
+                });
+                
+                const transportModeText = rbt.transportMode === 'Car' ? 'Driving' : 
+                                     rbt.transportMode === 'Transit' ? 'Transit' : 
+                                     rbt.transportMode === 'Both' ? 'Both' : 'Car';
+                
+                const rbtInfoWindow = new google.maps.InfoWindow({
+                    content: `
+                        <div class="map-info-window">
+                            <h3 style="margin: 0 0 8px 0; color: #666666; font-size: 18px; font-weight: 600;">RBT: ${rbt.name}</h3>
+                            <p style="margin: 4px 0; font-size: 12px; color: #666;">${rbt.location || 'Location not available'}</p>
+                            <p style="margin: 4px 0; font-size: 14px;"><strong>Transport:</strong> ${transportModeText}</p>
+                            ${rbt.email ? `<p style="margin: 4px 0; font-size: 12px;"><strong>Email:</strong> ${rbt.email}</p>` : ''}
+                            ${rbt.phone ? `<p style="margin: 4px 0; font-size: 12px;"><strong>Phone:</strong> ${rbt.phone}</p>` : ''}
+                            ${rbt.fortyHourCourseComplete ? `<p style="margin: 4px 0; font-size: 12px; color: #4CAF50;"><strong>✓ 40-Hour Course Complete</strong></p>` : ''}
+                        </div>
+                    `
+                });
+                
+                rbtMarker.addListener('click', () => {
+                    infoWindows.forEach(iw => iw.close());
+                    rbtInfoWindow.open(map, rbtMarker);
+                });
+                
+                markers.push(rbtMarker);
+                infoWindows.push(rbtInfoWindow);
+            } catch (error) {
+                console.error(`Error adding RBT marker for ${rbt.name}:`, error);
+            }
         }
     }
     
@@ -963,7 +1199,9 @@ async function addMarkersAndLines() {
         map.fitBounds(bounds, padding);
     }
     
-    console.log(`✅ Added ${markers.length} markers to map (${markers.filter(m => m.getTitle().includes('Client')).length} clients, ${markers.filter(m => m.getTitle().includes('RBT')).length} RBTs)`);
+    const clientCount = markers.filter(m => m.getTitle().includes('Client')).length;
+    const rbtCount = markers.filter(m => m.getTitle().includes('RBT')).length;
+    console.log(`✅ Added ${markers.length} markers to map (${clientCount} clients, ${rbtCount} RBTs)`);
 }
 
 // Global function to show connections from result cards
@@ -990,9 +1228,11 @@ function selectMatchCard(clientId) {
     // Update map summary
     updateMapSummary();
     
-    // Show connections on map if matched
-    if (selectedMatch && (selectedMatch.status === 'matched' || selectedMatch.status === 'scheduled' || selectedMatch.status === 'completed')) {
+    // Show connections on map if matched (including needs_review)
+    if (selectedMatch && (selectedMatch.status === 'matched' || selectedMatch.status === 'needs_review' || selectedMatch.status === 'scheduled' || selectedMatch.status === 'completed')) {
         showConnections(selectedMatch);
+    } else {
+        clearConnections();
     }
 }
 
@@ -1132,6 +1372,7 @@ function renderResults() {
                            match.status === 'scheduled' ? 'scheduled' :
                            match.status === 'completed' ? 'completed' :
                            match.status === 'standby' ? 'standby' : 
+                           match.status === 'needs_review' ? 'needs-review' :
                            match.status === 'no_location' ? 'no_location' : 'pending';
         
         // Standby reason text
@@ -1140,15 +1381,30 @@ function renderResults() {
             standbyReason = match.clientNeedsLocation ? 'Client missing location' : 'RBT missing location';
         }
         
+        // Location quality badges
+        const clientQuality = getLocationQuality(match.clientGeocodePrecision, match.clientGeocodeConfidence);
+        const rbtQuality = match.rbtGeocodePrecision ? getLocationQuality(match.rbtGeocodePrecision, match.rbtGeocodeConfidence) : null;
+        
+        // Needs review indicator
+        const needsReview = match.needsReview || match.status === 'needs_review';
+        const statusDisplay = match.status === 'needs_review' ? 'Review' : 
+                             match.status === 'matched' ? 'Matched' : 
+                             match.status === 'scheduled' ? 'Scheduled' : 
+                             match.status === 'completed' ? 'Completed' : 
+                             match.status === 'standby' ? 'Standby' : 'Needs Location';
+        
         const isSelected = selectedMatchId === match.clientId;
         return `
-            <div class="match-card ${isSelected ? 'selected' : ''}" onclick="selectMatchCard('${match.clientId}')">
+            <div class="match-card ${isSelected ? 'selected' : ''} ${needsReview ? 'needs-review-card' : ''}" onclick="selectMatchCard('${match.clientId}')">
                 <div class="match-card-header">
                     <div>
-                        <div class="match-client-name">${match.clientName}</div>
+                        <div class="match-client-name">
+                            ${match.clientName}
+                            ${clientQuality !== 'good' ? `<span class="location-quality-badge ${clientQuality}" title="Client location: ${clientQuality}">${clientQuality === 'medium' ? 'ZIP' : 'Verify'}</span>` : ''}
+                        </div>
                         <div class="match-client-location">${match.clientLocation || 'Unknown'}${match.clientZip ? ` • ${match.clientZip}` : ''}</div>
                     </div>
-                    <span class="match-status-pill ${statusClass}">${match.status === 'matched' ? 'Matched' : match.status === 'scheduled' ? 'Scheduled' : match.status === 'completed' ? 'Completed' : match.status === 'standby' ? 'Standby' : 'Needs Location'}</span>
+                    <span class="match-status-pill ${statusClass}">${statusDisplay}</span>
                 </div>
                 ${match.status === 'matched' || match.status === 'scheduled' || match.status === 'completed' ? `
                     <div class="match-rbt-info">
@@ -1316,10 +1572,27 @@ function setupFilters() {
 
 // Apply filter to results
 function applyFilter() {
+    if (!matchesData || !matchesData.matches) {
+        filteredMatches = [];
+        renderResults();
+        return;
+    }
+    
     if (currentFilter === 'all') {
-        filteredMatches = matchesData.matches;
+        // Show all matches including needs_review, matched, scheduled, completed
+        filteredMatches = matchesData.matches.filter(m => 
+            m.status === 'matched' || 
+            m.status === 'needs_review' || 
+            m.status === 'scheduled' || 
+            m.status === 'completed' || 
+            m.status === 'standby' || 
+            m.status === 'no_location'
+        );
     } else if (currentFilter === 'matched') {
-        filteredMatches = matchesData.matches.filter(m => m.status === 'matched');
+        // Show only matched AND needs_review (they're still matches, just need review)
+        filteredMatches = matchesData.matches.filter(m => 
+            m.status === 'matched' || m.status === 'needs_review'
+        );
     } else if (currentFilter === 'standby') {
         filteredMatches = matchesData.matches.filter(m => m.status === 'standby');
     } else if (currentFilter === 'no_location') {
@@ -1512,7 +1785,8 @@ function setupSearch() {
     
     // Close suggestions when clicking outside
     document.addEventListener('click', (e) => {
-        if (!searchInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
+        if (searchInput && suggestionsContainer && 
+            !searchInput.contains(e.target) && !suggestionsContainer.contains(e.target)) {
             suggestionsContainer.classList.remove('show');
         }
     });
@@ -1607,7 +1881,8 @@ function applySearchFilter() {
     if (currentFilter === 'all') {
         filteredMatches = searchFiltered;
     } else if (currentFilter === 'matched') {
-        filteredMatches = searchFiltered.filter(m => m.status === 'matched');
+        // Show both 'matched' and 'needs_review' as they are both successful matches
+        filteredMatches = searchFiltered.filter(m => m.status === 'matched' || m.status === 'needs_review');
     } else if (currentFilter === 'scheduled') {
         filteredMatches = searchFiltered.filter(m => m.status === 'scheduled');
     } else if (currentFilter === 'completed') {
@@ -1647,14 +1922,1407 @@ window.handleCourseUpload = function(event, rbtId) {
     }
 };
 
+// ============================================================================
+// Location Verification Modal
+// ============================================================================
+
+let currentVerifyEntity = null; // { type: 'client' | 'rbt', id: string, lat: number, lng: number }
+
+// Open location verification modal
+window.openLocationVerifyModal = function(type, id) {
+    const modal = document.getElementById('location-verify-modal');
+    if (!modal) return;
+    
+    // Find the entity
+    let entity = null;
+    if (type === 'client') {
+        entity = matchesData.clients?.find(c => c.id === id);
+    } else if (type === 'rbt') {
+        entity = matchesData.rbts?.find(r => r.id === id);
+    }
+    
+    if (!entity) {
+        console.error(`Entity not found: ${type} ${id}`);
+        return;
+    }
+    
+    // Store current entity for saving
+    currentVerifyEntity = {
+        type,
+        id,
+        lat: entity.lat || 40.7128, // Default to NYC if no coords
+        lng: entity.lng || -74.0060
+    };
+    
+    // Update modal content
+    document.getElementById('verify-name').textContent = entity.name || entity.full_name || 'Unknown';
+    document.getElementById('verify-address').textContent = entity.address || entity.location || 'No address';
+    document.getElementById('verify-precision').textContent = entity.geocodePrecision || 'Not geocoded';
+    document.getElementById('verify-coords').textContent = `Lat: ${currentVerifyEntity.lat.toFixed(6)}, Lng: ${currentVerifyEntity.lng.toFixed(6)}`;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    
+    // Initialize verification map after modal is visible
+    setTimeout(() => {
+        initVerificationMap(currentVerifyEntity.lat, currentVerifyEntity.lng);
+    }, 100);
+};
+
+// Initialize the verification map with draggable marker
+function initVerificationMap(lat, lng) {
+    const mapContainer = document.getElementById('location-verify-map');
+    if (!mapContainer || typeof google === 'undefined') {
+        console.warn('Cannot initialize verification map - Google Maps not loaded');
+        return;
+    }
+    
+    // Create map
+    verificationMap = new google.maps.Map(mapContainer, {
+        center: { lat, lng },
+        zoom: 15,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+    });
+    
+    // Create draggable marker
+    verificationMarker = new google.maps.Marker({
+        position: { lat, lng },
+        map: verificationMap,
+        draggable: true,
+        icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 14,
+            fillColor: '#FF6B35',
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 3
+        },
+        title: 'Drag to correct location'
+    });
+    
+    // Update coordinates display when marker is dragged
+    verificationMarker.addListener('dragend', () => {
+        const pos = verificationMarker.getPosition();
+        if (pos) {
+            currentVerifyEntity.lat = pos.lat();
+            currentVerifyEntity.lng = pos.lng();
+            document.getElementById('verify-coords').textContent = 
+                `Lat: ${pos.lat().toFixed(6)}, Lng: ${pos.lng().toFixed(6)}`;
+        }
+    });
+    
+    // Also update on drag for real-time feedback
+    verificationMarker.addListener('drag', () => {
+        const pos = verificationMarker.getPosition();
+        if (pos) {
+            document.getElementById('verify-coords').textContent = 
+                `Lat: ${pos.lat().toFixed(6)}, Lng: ${pos.lng().toFixed(6)}`;
+        }
+    });
+}
+
+// Close location verification modal
+window.closeLocationVerifyModal = function() {
+    const modal = document.getElementById('location-verify-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentVerifyEntity = null;
+    verificationMap = null;
+    verificationMarker = null;
+};
+
+// API base URL for location updates
+const API_BASE_URL = window.SCHEDULING_API_URL || 'http://localhost:3001';
+
+// Save verified location via secure API
+window.saveVerifiedLocation = async function() {
+    if (!currentVerifyEntity) {
+        console.error('No entity to save');
+        return;
+    }
+    
+    const { type, id, lat, lng } = currentVerifyEntity;
+    
+    console.log(`Saving verified location for ${type} ${id}: ${lat}, ${lng}`);
+    
+    // Show loading state
+    const saveBtn = document.querySelector('.location-modal-actions .btn-primary');
+    const originalText = saveBtn ? saveBtn.textContent : 'Save Location';
+    if (saveBtn) {
+        saveBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+    }
+    
+    try {
+        // Call the secure API to update location
+        // This uses SERVICE_ROLE key on the server side
+        const response = await fetch(`${API_BASE_URL}/api/location/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                entityType: type,
+                entityId: id,
+                lat: lat,
+                lng: lng,
+                source: 'manual_pin',
+            }),
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Failed to save location');
+        }
+        
+        console.log('Location saved successfully:', result);
+        
+        // Update local data after successful API call
+        if (type === 'client') {
+            const clientIndex = matchesData.clients?.findIndex(c => c.id === id);
+            if (clientIndex !== -1) {
+                matchesData.clients[clientIndex].lat = lat;
+                matchesData.clients[clientIndex].lng = lng;
+                matchesData.clients[clientIndex].geocodePrecision = 'ROOFTOP';
+                matchesData.clients[clientIndex].geocodeConfidence = 1.0;
+                matchesData.clients[clientIndex].needsLocationVerification = false;
+            }
+            
+            // Also update in matches
+            matchesData.matches?.forEach(m => {
+                if (m.clientId === id) {
+                    m.clientLat = lat;
+                    m.clientLng = lng;
+                    m.clientGeocodePrecision = 'ROOFTOP';
+                    m.clientGeocodeConfidence = 1.0;
+                }
+            });
+        } else if (type === 'rbt') {
+            const rbtIndex = matchesData.rbts?.findIndex(r => r.id === id);
+            if (rbtIndex !== -1) {
+                matchesData.rbts[rbtIndex].lat = lat;
+                matchesData.rbts[rbtIndex].lng = lng;
+                matchesData.rbts[rbtIndex].geocodePrecision = 'ROOFTOP';
+                matchesData.rbts[rbtIndex].geocodeConfidence = 1.0;
+            }
+            
+            // Also update in matches
+            matchesData.matches?.forEach(m => {
+                if (m.rbtId === id) {
+                    m.rbtLat = lat;
+                    m.rbtLng = lng;
+                    m.rbtGeocodePrecision = 'ROOFTOP';
+                    m.rbtGeocodeConfidence = 1.0;
+                }
+            });
+        }
+        
+        // Close modal
+        closeLocationVerifyModal();
+        
+        // Refresh UI
+        renderResults();
+        if (map) {
+            addMarkersAndLines();
+        }
+        
+        // Show success message
+        alert(`Location verified and saved! The ${type} location has been updated in the database.`);
+        
+    } catch (error) {
+        console.error('Error saving location:', error);
+        alert(`Failed to save location: ${error.message}\n\nMake sure the API server is running (npm run api)`);
+    } finally {
+        // Restore button state
+        if (saveBtn) {
+            saveBtn.textContent = originalText;
+            saveBtn.disabled = false;
+        }
+    }
+};
+
+// ============================================================================
+// POTENTIAL MATCHES (Admin UI)
+// ============================================================================
+
+let potentialMatchesData = [];
+let currentMatchStatus = 'PENDING';
+
+// Show Potential Matches panel
+window.showPotentialMatches = function() {
+    document.getElementById('matching-results-panel').classList.add('hidden');
+    document.getElementById('potential-matches-panel').classList.remove('hidden');
+    loadPotentialMatches();
+    // Also add markers for all potential matches
+    addPotentialMatchMarkers();
+};
+
+// Show Matching Results panel
+window.showMatchingResults = function() {
+    document.getElementById('potential-matches-panel').classList.add('hidden');
+    document.getElementById('matching-results-panel').classList.remove('hidden');
+    // Clear potential match markers and restore regular markers
+    clearConnections();
+    if (map) {
+        addMarkersAndLines();
+    }
+};
+
+// Add markers for all potential matches
+async function addPotentialMatchMarkers() {
+    if (!map || !potentialMatchesData || potentialMatchesData.length === 0) {
+        return;
+    }
+    
+    // Clear existing markers first
+    markers.forEach(m => m.setMap(null));
+    infoWindows.forEach(iw => iw.close());
+    markers = [];
+    infoWindows = [];
+    clearConnections();
+    
+    const bounds = new google.maps.LatLngBounds();
+    
+    for (const match of potentialMatchesData) {
+        const rbt = match.rbt_profiles;
+        const client = match.clients;
+        
+        if (!rbt || !client || !rbt.lat || !rbt.lng || !client.lat || !client.lng) {
+            continue;
+        }
+        
+        const clientCoords = { lat: client.lat, lng: client.lng };
+        const rbtCoords = { lat: rbt.lat, lng: rbt.lng };
+        
+        bounds.extend(clientCoords);
+        bounds.extend(rbtCoords);
+        
+        // Add client marker
+        const clientMarker = new google.maps.Marker({
+            position: clientCoords,
+            map: map,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 14,
+                fillColor: '#FF6B35',
+                fillOpacity: 1,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 3
+            },
+            title: `Client: ${client.name}`,
+            zIndex: 100
+        });
+        
+        const clientInfoWindow = new google.maps.InfoWindow({
+            content: `
+                <div class="map-info-window">
+                    <h3 style="margin: 0 0 8px 0; color: #FF6B35; font-size: 18px; font-weight: 600;">Client: ${client.name}</h3>
+                    <p style="margin: 4px 0; font-size: 12px; color: #666;">${client.location_borough || client.locationBorough || client.city || 'Unknown'}</p>
+                    <p style="margin: 4px 0; font-size: 12px;"><strong>Score:</strong> ${match.score.toFixed(1)}</p>
+                    <button onclick="showPotentialMatchOnMap('${match.id}')" style="margin-top: 8px; padding: 6px 12px; background: #FF6B35; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">Show Route</button>
+                </div>
+            `
+        });
+        
+        clientMarker.addListener('click', () => {
+            infoWindows.forEach(iw => iw.close());
+            clientInfoWindow.open(map, clientMarker);
+            showPotentialMatchOnMap(match.id);
+        });
+        
+        markers.push(clientMarker);
+        infoWindows.push(clientInfoWindow);
+        
+        // Add RBT marker
+        const rbtMarker = new google.maps.Marker({
+            position: rbtCoords,
+            map: map,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 12,
+                fillColor: '#666666',
+                fillOpacity: 0.8,
+                strokeColor: '#FFFFFF',
+                strokeWeight: 2
+            },
+            title: `RBT: ${rbt.full_name || rbt.first_name + ' ' + rbt.last_name}`,
+            zIndex: 50
+        });
+        
+        const rbtInfoWindow = new google.maps.InfoWindow({
+            content: `
+                <div class="map-info-window">
+                    <h3 style="margin: 0 0 8px 0; color: #666666; font-size: 18px; font-weight: 600;">RBT: ${rbt.full_name || rbt.first_name + ' ' + rbt.last_name}</h3>
+                    <p style="margin: 4px 0; font-size: 12px; color: #666;">${rbt.locationCity || 'Unknown'}</p>
+                    <p style="margin: 4px 0; font-size: 12px;"><strong>Score:</strong> ${match.score.toFixed(1)}</p>
+                    <button onclick="showPotentialMatchOnMap('${match.id}')" style="margin-top: 8px; padding: 6px 12px; background: #FF6B35; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">Show Route</button>
+                </div>
+            `
+        });
+        
+        rbtMarker.addListener('click', () => {
+            infoWindows.forEach(iw => iw.close());
+            rbtInfoWindow.open(map, rbtMarker);
+            showPotentialMatchOnMap(match.id);
+        });
+        
+        markers.push(rbtMarker);
+        infoWindows.push(rbtInfoWindow);
+    }
+    
+    // Fit map to show all markers
+    if (bounds.getNorthEast().lat() !== bounds.getSouthWest().lat()) {
+        map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+    }
+    
+    console.log(`✅ Added ${markers.length} markers for potential matches`);
+}
+
+// Load potential matches from API
+async function loadPotentialMatches(status = 'PENDING') {
+    const listEl = document.getElementById('potential-matches-list');
+    listEl.innerHTML = '<div class="text-center text-slate-500 py-8"><p>Loading potential matches...</p></div>';
+    
+    try {
+        const url = status === 'all' 
+            ? `${API_BASE_URL}/api/admin/matches/all`
+            : `${API_BASE_URL}/api/admin/matches/pending`;
+        
+        console.log('Fetching potential matches from:', url);
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        
+        // Check if response is actually JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response:', text.substring(0, 200));
+            throw new Error(`Server returned ${response.status} ${response.statusText}. Expected JSON but got: ${contentType || 'unknown'}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+            throw new Error(result.message || `Server error: ${response.status} ${response.statusText}`);
+        }
+        
+        potentialMatchesData = result.matches || [];
+        renderPotentialMatches(potentialMatchesData, status);
+        
+        document.getElementById('potential-matches-count').textContent = potentialMatchesData.length;
+        
+    } catch (error) {
+        console.error('Error loading potential matches:', error);
+        listEl.innerHTML = `
+            <div class="text-center text-red-500 py-8">
+                <p class="font-semibold">Error loading matches</p>
+                <p class="text-sm mt-2">${error.message}</p>
+                <p class="text-xs text-slate-500 mt-4">Make sure:</p>
+                <ul class="text-xs text-slate-500 mt-2 text-left inline-block">
+                    <li>• API server is running: <code class="bg-slate-100 px-1 rounded">npm run api</code></li>
+                    <li>• API URL is correct: <code class="bg-slate-100 px-1 rounded">${API_BASE_URL}</code></li>
+                    <li>• Database is configured and validated</li>
+                </ul>
+                <button onclick="loadPotentialMatches('${status}')" class="mt-4 px-4 py-2 text-sm font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors">
+                    Retry
+                </button>
+            </div>
+        `;
+    }
+}
+
+// Render potential matches list
+function renderPotentialMatches(matches, statusFilter) {
+    const listEl = document.getElementById('potential-matches-list');
+    
+    if (matches.length === 0) {
+        listEl.innerHTML = `
+            <div class="text-center text-slate-500 py-8">
+                <p>No ${statusFilter === 'all' ? '' : statusFilter.toLowerCase()} matches found.</p>
+                <button onclick="refreshSuggestions()" class="mt-4 px-4 py-2 text-sm font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors">
+                    Generate Suggestions
+                </button>
+            </div>
+        `;
+        return;
+    }
+    
+    // Filter by status if not 'all'
+    const filtered = statusFilter === 'all' 
+        ? matches 
+        : matches.filter(m => m.status === statusFilter);
+    
+    listEl.innerHTML = filtered.map(match => {
+        const rbt = match.rbt_profiles;
+        const client = match.clients;
+        const rationale = match.rationale || {};
+        const travelTime = rationale.travelTimeMinutes || match.travel_time_sec ? Math.round(match.travel_time_sec / 60) : null;
+        const distance = rationale.distanceMiles || (match.distance_meters ? Math.round(match.distance_meters / 1609.34 * 10) / 10 : null);
+        
+        const statusBadge = {
+            'PENDING': '<span class="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">Pending</span>',
+            'APPROVED': '<span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">Approved</span>',
+            'REJECTED': '<span class="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded">Rejected</span>',
+        }[match.status] || '';
+        
+        const qualityBadge = {
+            'Good': '<span class="px-2 py-0.5 text-xs bg-green-50 text-green-700 rounded">Good</span>',
+            'Medium': '<span class="px-2 py-0.5 text-xs bg-yellow-50 text-yellow-700 rounded">Medium</span>',
+            'Bad': '<span class="px-2 py-0.5 text-xs bg-red-50 text-red-700 rounded">Bad</span>',
+        };
+        
+        return `
+            <div class="border border-slate-200 rounded-lg p-4 mb-3 hover:shadow-md transition-shadow ${match.status === 'PENDING' ? 'bg-white' : match.status === 'APPROVED' ? 'bg-green-50/30' : 'bg-red-50/30'}">
+                <div class="flex items-start justify-between mb-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-2">
+                            <h3 class="font-semibold text-slate-900">${client?.name || 'Unknown Client'}</h3>
+                            ${statusBadge}
+                            <span class="px-2 py-1 text-xs font-bold bg-blue-100 text-blue-800 rounded">Score: ${match.score.toFixed(1)}</span>
+                        </div>
+                        <p class="text-sm text-slate-600 mb-1">
+                            <strong>RBT:</strong> ${rbt?.full_name || rbt?.first_name + ' ' + rbt?.last_name || 'Unknown'} 
+                            ${rbt?.city ? `(${rbt.city}, ${rbt.state})` : ''}
+                        </p>
+                        <p class="text-sm text-slate-600">
+                            <strong>Client:</strong> ${client?.location_borough || client?.locationBorough || client?.city || 'Unknown Location'}
+                            ${client?.zip ? ` · ${client.zip}` : ''}
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3 mb-3 text-sm">
+                    <div>
+                        <span class="text-slate-500">Travel Time:</span>
+                        <span class="font-medium ml-1">${travelTime ? travelTime + ' min' : 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Distance:</span>
+                        <span class="font-medium ml-1">${distance ? distance + ' mi' : 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Client Quality:</span>
+                        <span class="ml-1">${qualityBadge[rationale.geocodeQuality?.client || 'Bad']}</span>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">RBT Quality:</span>
+                        <span class="ml-1">${qualityBadge[rationale.geocodeQuality?.rbt || 'Bad']}</span>
+                    </div>
+                </div>
+                
+                ${rationale.flags && rationale.flags.length > 0 ? `
+                    <div class="mb-3">
+                        <div class="flex flex-wrap gap-1">
+                            ${rationale.flags.map(flag => `<span class="px-2 py-0.5 text-xs bg-slate-100 text-slate-700 rounded">${flag}</span>`).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <div class="flex gap-2 mt-3">
+                    <button onclick="showPotentialMatchOnMap('${match.id}')" class="flex-1 px-3 py-2 text-sm font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors">
+                        View on Map
+                    </button>
+                    ${match.status === 'PENDING' ? `
+                        <button onclick="approveMatch('${match.id}')" class="px-3 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors">
+                            Approve
+                        </button>
+                        <button onclick="rejectMatch('${match.id}')" class="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                            Reject
+                        </button>
+                    ` : `
+                        <div class="text-xs text-slate-500 flex items-center px-3">
+                            ${match.decided_at ? `Decided: ${new Date(match.decided_at).toLocaleDateString()}` : ''}
+                            ${match.decided_by ? ` by ${match.decided_by}` : ''}
+                        </div>
+                    `}
+                </div>
+                
+                ${match.needs_review ? `
+                    <div class="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                        <strong>⚠️ Needs Review:</strong> ${match.review_reason || 'Location quality issues'}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+// Approve a match
+window.approveMatch = async function(matchId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/matches/${matchId}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decidedBy: 'admin' }),
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Failed to approve match');
+        }
+        
+        // Reload matches
+        loadPotentialMatches(currentMatchStatus);
+        
+    } catch (error) {
+        console.error('Error approving match:', error);
+        alert(`Failed to approve match: ${error.message}`);
+    }
+};
+
+// Reject a match
+window.rejectMatch = async function(matchId) {
+    const reason = prompt('Reason for rejection (optional):');
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/matches/${matchId}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decidedBy: 'admin', reason }),
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Failed to reject match');
+        }
+        
+        // Reload matches
+        loadPotentialMatches(currentMatchStatus);
+        
+    } catch (error) {
+        console.error('Error rejecting match:', error);
+        alert(`Failed to reject match: ${error.message}`);
+    }
+};
+
+// Refresh suggestions
+window.refreshSuggestions = async function() {
+    const btn = event?.target || document.querySelector('button[onclick="refreshSuggestions()"]');
+    const originalText = btn.textContent;
+    btn.textContent = 'Generating...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/matching/suggest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ maxPerRbt: 10 }),
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || result.error) {
+            throw new Error(result.message || 'Failed to generate suggestions');
+        }
+        
+        alert(`Generated ${result.total} match suggestions!`);
+        loadPotentialMatches(currentMatchStatus);
+        
+    } catch (error) {
+        console.error('Error refreshing suggestions:', error);
+        alert(`Failed to generate suggestions: ${error.message}`);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+};
+
+// Show potential match on map
+window.showPotentialMatchOnMap = async function(matchId) {
+    const match = potentialMatchesData.find(m => m.id === matchId);
+    if (!match) {
+        console.error('Match not found:', matchId);
+        return;
+    }
+    
+    const rbt = match.rbt_profiles;
+    const client = match.clients;
+    
+    if (!rbt || !client || !rbt.lat || !rbt.lng || !client.lat || !client.lng) {
+        alert('Location data missing for this match. Cannot display on map.');
+        return;
+    }
+    
+    // Clear existing connections
+    clearConnections();
+    
+    try {
+        const clientCoords = { lat: client.lat, lng: client.lng };
+        const rbtCoords = { lat: rbt.lat, lng: rbt.lng };
+        
+        // Determine travel mode
+        const travelMode = match.travel_mode || (rbt.transport_mode === 'Transit' ? 'transit' : 'driving');
+        const modeForDirections = travelMode === 'transit' ? google.maps.TravelMode.TRANSIT : google.maps.TravelMode.DRIVING;
+        
+        // Get route from Directions API
+        try {
+            const route = await getDirectionsRoute(
+                clientCoords,
+                rbtCoords,
+                travelMode
+            );
+            
+            // Create DirectionsRenderer
+            const directionsRenderer = new google.maps.DirectionsRenderer({
+                map: map,
+                directions: route,
+                suppressMarkers: true, // We use our own markers
+                polylineOptions: {
+                    strokeColor: match.status === 'APPROVED' ? '#4CAF50' : match.status === 'PENDING' ? '#FF9800' : '#666666',
+                    strokeWeight: 5,
+                    strokeOpacity: 0.8
+                }
+            });
+            
+            directionsRenderers.push(directionsRenderer);
+            
+            // Get travel info from match data
+            const rationale = match.rationale || {};
+            const distance = rationale.distanceMiles || (match.distance_meters ? Math.round(match.distance_meters / 1609.34 * 10) / 10 : null);
+            const travelTime = rationale.travelTimeMinutes || (match.travel_time_sec ? Math.round(match.travel_time_sec / 60) : null);
+            
+            // Add midpoint marker with travel info
+            const midLat = (clientCoords.lat + rbtCoords.lat) / 2;
+            const midLng = (clientCoords.lng + rbtCoords.lng) / 2;
+            
+            const connectionInfoWindow = new google.maps.InfoWindow({
+                content: `
+                    <div class="map-info-window" style="text-align: center; min-width: 200px;">
+                        <p style="margin: 4px 0; font-size: 14px; font-weight: 600;">Potential Match</p>
+                        <p style="margin: 4px 0; font-size: 12px; color: #666;">${client.name} → ${rbt.full_name || rbt.first_name + ' ' + rbt.last_name}</p>
+                        <hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">
+                        <p style="margin: 4px 0; font-size: 14px;">Score: <strong>${match.score.toFixed(1)}</strong></p>
+                        ${distance ? `<p style="margin: 4px 0; font-size: 14px;">Distance: <strong>${distance.toFixed(1)} miles</strong></p>` : ''}
+                        ${travelTime ? `<p style="margin: 4px 0; font-size: 14px;">Travel Time: <strong>${travelTime} minutes</strong></p>` : ''}
+                        <p style="margin: 4px 0; font-size: 14px;">Mode: <strong>${travelMode === 'transit' ? 'Transit' : 'Driving'}</strong></p>
+                        <p style="margin: 4px 0; font-size: 12px; color: ${match.status === 'APPROVED' ? '#4CAF50' : match.status === 'PENDING' ? '#FF9800' : '#666'}; font-weight: 600;">
+                            Status: ${match.status}
+                        </p>
+                    </div>
+                `,
+                position: { lat: midLat, lng: midLng }
+            });
+            
+            connectionInfoWindow.open(map);
+            infoWindows.push(connectionInfoWindow);
+            
+            // Pan to show route
+            map.fitBounds(route.routes[0].bounds);
+            
+        } catch (directionsError) {
+            console.warn('Directions API failed, falling back to straight line:', directionsError);
+            // Fallback to straight line
+            const line = new google.maps.Polyline({
+                path: [
+                    new google.maps.LatLng(clientCoords.lat, clientCoords.lng),
+                    new google.maps.LatLng(rbtCoords.lat, rbtCoords.lng)
+                ],
+                geodesic: true,
+                strokeColor: match.status === 'APPROVED' ? '#4CAF50' : match.status === 'PENDING' ? '#FF9800' : '#666666',
+                strokeOpacity: 0.8,
+                strokeWeight: 5,
+                zIndex: 50
+            });
+            line.setMap(map);
+            lines.push(line);
+            
+            // Fit bounds
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend(clientCoords);
+            bounds.extend(rbtCoords);
+            map.fitBounds(bounds);
+        }
+        
+    } catch (error) {
+        console.error('Error showing potential match on map:', error);
+        alert(`Error displaying match on map: ${error.message}`);
+    }
+};
+
+// Setup match status filter buttons
+function setupMatchStatusFilters() {
+    document.querySelectorAll('.match-status-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.match-status-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentMatchStatus = btn.dataset.status;
+            loadPotentialMatches(currentMatchStatus);
+        });
+    });
+}
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
+// Tab switching functionality
+function switchTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('active');
+        el.classList.remove('border-rise-orange');
+        el.classList.remove('text-rise-orange');
+    });
+    
+    // Show selected tab
+    const tabContent = document.getElementById(`tab-${tabName}`);
+    const tabBtn = document.querySelector(`[data-tab="${tabName}"]`);
+    
+    if (tabContent) {
+        tabContent.classList.remove('hidden');
+    }
+    if (tabBtn) {
+        tabBtn.classList.add('active', 'border-rise-orange', 'text-rise-orange');
+        tabBtn.style.borderBottomColor = '#FF6B35';
+    }
+    
+    // Load tab-specific data
+    if (tabName === 'unmatched') {
+        loadUnmatched();
+    } else if (tabName === 'locations') {
+        loadLocationsNeedingVerification();
+    } else if (tabName === 'suggestions') {
+        // Potential matches already loaded
+    } else if (tabName === 'simulation') {
+        loadProposals('proposed');
+        loadPairedClients();
+    }
+}
+
+// Run matching job via API
+async function runMatchingNow() {
+    const btn = document.getElementById('run-matching-btn');
+    const btnText = document.getElementById('run-matching-btn-text');
+    const spinner = document.getElementById('run-matching-spinner');
+    
+    if (!btn || btn.disabled) return;
+    
+    btn.disabled = true;
+    btnText.textContent = 'Running...';
+    if (spinner) spinner.classList.remove('hidden');
+    
+    try {
+        const API_BASE_URL = window.SCHEDULING_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${API_BASE_URL}/api/admin/matching/run-matching`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.message || 'Failed to run matching');
+        }
+        
+        // Update last run time
+        if (result.summary && result.summary.generatedAt) {
+            updateLastRunTime(result.summary.generatedAt);
+        } else if (result.generatedAt) {
+            updateLastRunTime(result.generatedAt);
+        }
+        
+        // Reload data
+        await refreshData();
+        
+        // Show success message
+        const summary = result.summary || {};
+        alert(`Matching completed!\n\nMatched: ${summary.matched || 0}\nStandby: ${summary.standby || 0}\nNo Location: ${summary.noLocation || 0}`);
+    } catch (error) {
+        console.error('Error running matching:', error);
+        alert(`Failed to run matching: ${error.message}\n\nMake sure the API server is running on port 3001.`);
+    } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Run Matching Now';
+        if (spinner) spinner.classList.add('hidden');
+    }
+}
+
+// Make runMatchingNow available immediately
+if (typeof window !== 'undefined') {
+    window.runMatchingNow = runMatchingNow;
+}
+
+// Refresh data from matches_data.json
+async function refreshData() {
+    try {
+        const response = await fetch('matches_data.json?t=' + Date.now());
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        matchesData = await response.json();
+        
+        // Re-render UI
+        updateStats(); // Updates KPIs
+        renderResults(); // Render match results
+        renderRBTProfiles();
+        renderClientProfiles();
+        renderActivityLogs();
+        if (map) {
+            addMarkersAndLines();
+        }
+        
+        console.log('✅ Data refreshed');
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        alert(`Failed to refresh data: ${error.message}`);
+    }
+}
+
+// Make refreshData available immediately
+if (typeof window !== 'undefined') {
+    window.refreshData = refreshData;
+}
+
+// Update last run time display
+function updateLastRunTime(timestamp) {
+    const el = document.getElementById('last-run-time');
+    if (el && timestamp) {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        
+        if (diffMins < 1) {
+            el.textContent = 'Just now';
+        } else if (diffMins < 60) {
+            el.textContent = `${diffMins} min ago`;
+        } else if (diffMins < 1440) {
+            const hours = Math.floor(diffMins / 60);
+            el.textContent = `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        } else {
+            el.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+    }
+}
+
+// Poll for matching status
+function startStatusPolling() {
+    const API_BASE_URL = window.SCHEDULING_API_URL || 'http://localhost:3001';
+    
+    // Try to fetch status immediately (but don't show errors if API is down)
+    const fetchStatus = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/admin/matching/matching-status`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                // Don't throw on network errors
+            }).catch(() => null);
+            
+            if (response && response.ok) {
+                const result = await response.json();
+                if (result && result.lastRunAt) {
+                    updateLastRunTime(result.lastRunAt);
+                } else if (result && result.last_matching_run_at) {
+                    updateLastRunTime(result.last_matching_run_at);
+                }
+            }
+        } catch (error) {
+            // Silently fail - API server might not be running, which is okay
+            // Only log non-network errors
+            if (error.message && !error.message.includes('fetch') && !error.message.includes('Failed')) {
+                console.debug('Status polling error:', error);
+            }
+        }
+    };
+    
+    // Fetch immediately
+    fetchStatus();
+    
+    // Then poll every 60 seconds
+    setInterval(fetchStatus, 60000);
+}
+
+// Load unmatched clients
+async function loadUnmatched() {
+    const listEl = document.getElementById('unmatched-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div class="text-center text-slate-500 py-8"><p>Loading unmatched clients...</p></div>';
+    
+    try {
+        const API_BASE_URL = window.SCHEDULING_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${API_BASE_URL}/api/admin/matching/unmatched`);
+        const result = await response.json();
+        
+        if (result.success && result.unmatched) {
+            if (result.unmatched.length === 0) {
+                listEl.innerHTML = '<div class="text-center text-slate-500 py-8"><p>No unmatched clients</p></div>';
+                return;
+            }
+            
+            listEl.innerHTML = result.unmatched.map(item => `
+                <div class="border border-slate-200 rounded-lg p-4 mb-3 hover:shadow-md transition-shadow">
+                    <div class="flex items-start justify-between mb-2">
+                        <h4 class="font-semibold text-slate-900">${item.clientName || 'Unknown'}</h4>
+                        <span class="px-2 py-1 text-xs font-medium rounded ${item.status === 'standby' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}">
+                            ${item.status === 'standby' ? 'Standby' : 'No Location'}
+                        </span>
+                    </div>
+                    <p class="text-sm text-slate-600 mb-2">${item.reason || 'No reason provided'}</p>
+                    ${item.location ? `<p class="text-xs text-slate-500">Location: ${item.location}</p>` : ''}
+                    ${item.needsLocationVerification ? '<p class="text-xs text-amber-600 mt-2">⚠️ Needs location verification</p>' : ''}
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Error loading unmatched:', error);
+        listEl.innerHTML = '<div class="text-center text-red-500 py-8"><p>Error loading unmatched clients</p></div>';
+    }
+}
+
+// Load locations needing verification
+function loadLocationsNeedingVerification() {
+    const listEl = document.getElementById('locations-verify-list');
+    if (!listEl || !matchesData) return;
+    
+    // Find clients and RBTs with bad/medium geocoding quality
+    const needsVerification = [];
+    
+    // Check clients
+    if (matchesData.clients) {
+        matchesData.clients.forEach(client => {
+            const quality = getLocationQuality(client.geocodePrecision, client.geocodeConfidence);
+            if (quality === 'bad' || client.needsLocationVerification) {
+                needsVerification.push({
+                    type: 'client',
+                    id: client.id,
+                    name: client.name,
+                    location: client.location,
+                    precision: client.geocodePrecision || 'Unknown',
+                    confidence: client.geocodeConfidence !== null && client.geocodeConfidence !== undefined ? client.geocodeConfidence : null,
+                });
+            }
+        });
+    }
+    
+    // Check RBTs
+    if (matchesData.rbts) {
+        matchesData.rbts.forEach(rbt => {
+            const quality = getLocationQuality(rbt.geocodePrecision, rbt.geocodeConfidence);
+            if (quality === 'bad') {
+                needsVerification.push({
+                    type: 'rbt',
+                    id: rbt.id,
+                    name: rbt.name,
+                    location: rbt.location,
+                    precision: rbt.geocodePrecision || 'Unknown',
+                    confidence: rbt.geocodeConfidence !== null && rbt.geocodeConfidence !== undefined ? rbt.geocodeConfidence : null,
+                });
+            }
+        });
+    }
+    
+    if (needsVerification.length === 0) {
+        listEl.innerHTML = '<div class="text-center text-slate-500 py-8"><p>No locations need verification</p></div>';
+        return;
+    }
+    
+    listEl.innerHTML = needsVerification.map(item => `
+        <div class="border border-slate-200 rounded-lg p-4 mb-3 hover:shadow-md transition-shadow">
+            <div class="flex items-start justify-between mb-2">
+                <div>
+                    <h4 class="font-semibold text-slate-900">${item.name || 'Unknown'}</h4>
+                    <p class="text-xs text-slate-500 mt-1">${item.type === 'client' ? 'Client' : 'RBT'}</p>
+                </div>
+                <span class="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800">
+                    ${item.precision}
+                </span>
+            </div>
+            <p class="text-sm text-slate-600 mb-2">Location: ${item.location || 'Unknown'}</p>
+            <p class="text-xs text-slate-500">Confidence: ${item.confidence !== null && item.confidence !== undefined ? (item.confidence * 100).toFixed(0) + '%' : 'Not set'}</p>
+            <button onclick="verifyLocation('${item.type}', '${item.id}')" class="mt-3 px-3 py-1.5 text-xs font-medium text-white bg-rise-orange rounded-lg hover:bg-rise-orange-dark transition-colors">
+                Verify Location
+            </button>
+        </div>
+    `).join('');
+}
+
+// Toggle map type (placeholder)
+function toggleMapType() {
+    const textEl = document.getElementById('map-type-text');
+    if (textEl) {
+        textEl.textContent = textEl.textContent === 'Map' ? 'Satellite' : 'Map';
+        // TODO: Implement map type toggle
+    }
+}
+
+// renderKPIs is now consolidated into updateStats()
+
     document.addEventListener('DOMContentLoaded', () => {
         console.log('📄 DOM loaded, initializing...');
         init();
+        setupMatchStatusFilters();
+        startStatusPolling(); // Start polling for status updates
     });
 } else {
     console.log('📄 DOM already ready, initializing...');
     init();
+    setupMatchStatusFilters();
+    startStatusPolling(); // Start polling for status updates
+}
+
+// ============================================================================
+// SIMULATION WORKFLOW FUNCTIONS
+// ============================================================================
+
+const API_BASE_URL_SIM = window.SCHEDULING_API_URL || 'http://localhost:3001';
+
+// Add client manually
+async function addClient() {
+    const nameInput = document.getElementById('client-name-input');
+    const addressInput = document.getElementById('client-address-input');
+    const notesInput = document.getElementById('client-notes-input');
+    const btn = document.getElementById('add-client-btn');
+    
+    if (!nameInput || !addressInput || !btn) return;
+    
+    const name = nameInput.value.trim();
+    const address = addressInput.value.trim();
+    const notes = notesInput?.value.trim() || '';
+    
+    if (!name || !address) {
+        alert('Name and address are required');
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = 'Adding...';
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/simulation/add-client`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, address, notes }),
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to add client');
+        }
+        
+        // Clear form
+        nameInput.value = '';
+        addressInput.value = '';
+        if (notesInput) notesInput.value = '';
+        
+        alert(`Client "${data.client.name}" added successfully!`);
+        
+        // Refresh proposals if on simulation tab
+        if (document.getElementById('tab-simulation') && !document.getElementById('tab-simulation').classList.contains('hidden')) {
+            loadProposals('proposed');
+        }
+    } catch (error) {
+        console.error('Error adding client:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to add client'}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add Client';
+    }
+}
+
+// Run simulation
+async function runSimulation() {
+    const btn = document.getElementById('run-simulation-btn');
+    const btnText = document.getElementById('run-simulation-btn-text');
+    const spinner = document.getElementById('run-simulation-spinner');
+    
+    if (!btn || btn.disabled) return;
+    
+    if (!confirm('Run simulation to create proposals for unpaired clients?')) {
+        return;
+    }
+    
+    btn.disabled = true;
+    if (btnText) btnText.textContent = 'Running...';
+    if (spinner) spinner.classList.remove('hidden');
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/simulation/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to run simulation');
+        }
+        
+        alert(`Simulation complete!\n\nProposals created: ${data.proposals_created}\nClients processed: ${data.clients_processed}${data.errors.length > 0 ? `\nErrors: ${data.errors.length}` : ''}`);
+        
+        // Reload proposals
+        loadProposals('proposed');
+    } catch (error) {
+        console.error('Error running simulation:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to run simulation'}`);
+    } finally {
+        btn.disabled = false;
+        if (btnText) btnText.textContent = 'Run Simulation';
+        if (spinner) spinner.classList.add('hidden');
+    }
+}
+
+// Load proposals
+async function loadProposals(status = 'proposed') {
+    const listEl = document.getElementById('proposals-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div class="text-center text-slate-500 py-8"><p>Loading proposals...</p></div>';
+    
+    try {
+        const url = `${API_BASE_URL_SIM}/api/admin/simulation/proposals?status=${status}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to load proposals');
+        }
+        
+        if (!data.proposals || data.proposals.length === 0) {
+            listEl.innerHTML = `<div class="text-center text-slate-500 py-8"><p>No ${status} proposals found.</p></div>`;
+            return;
+        }
+        
+        listEl.innerHTML = data.proposals.map((proposal: any) => {
+            const client = proposal.client || {};
+            const rbt = proposal.rbt || {};
+            const travelTime = proposal.travel_time_minutes;
+            const distance = proposal.distance_meters ? (proposal.distance_meters / 1609.34).toFixed(1) : 'N/A';
+            
+            let actionsHtml = '';
+            if (status === 'proposed') {
+                actionsHtml = `
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="approveProposal('${proposal.id}')" class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors">
+                            Approve
+                        </button>
+                        <button onclick="rejectProposal('${proposal.id}')" class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                            Reject
+                        </button>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="border border-slate-200 rounded-lg p-4 mb-3 hover:shadow-md transition-shadow">
+                    <div class="flex items-start justify-between mb-2">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-slate-900">${client.name || 'Unknown Client'}</h4>
+                            <p class="text-xs text-slate-500 mt-1">Client</p>
+                        </div>
+                        <span class="px-2 py-1 text-xs font-medium rounded ${
+                            status === 'proposed' ? 'bg-blue-100 text-blue-800' :
+                            status === 'approved' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                        }">
+                            ${status.toUpperCase()}
+                        </span>
+                    </div>
+                    <div class="mt-3 space-y-1 text-sm">
+                        <p><span class="text-slate-600">RBT:</span> <span class="font-medium">${rbt.full_name || 'Unknown'}</span></p>
+                        <p><span class="text-slate-600">Travel Time:</span> <span class="font-medium">${travelTime} min</span></p>
+                        <p><span class="text-slate-600">Distance:</span> <span class="font-medium">${distance} mi</span></p>
+                        <p class="text-xs text-slate-500 mt-2">Created: ${new Date(proposal.created_at).toLocaleString()}</p>
+                    </div>
+                    ${actionsHtml}
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading proposals:', error);
+        listEl.innerHTML = `<div class="text-center text-red-500 py-8"><p>Error: ${error instanceof Error ? error.message : 'Failed to load proposals'}</p></div>`;
+    }
+}
+
+// Approve proposal
+async function approveProposal(proposalId: string) {
+    if (!confirm('Approve this proposal? This will pair the client with the RBT and lock the RBT.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/simulation/approve/${proposalId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to approve proposal');
+        }
+        
+        alert('Proposal approved successfully!');
+        loadProposals('proposed');
+        loadPairedClients();
+        refreshData(); // Refresh map
+    } catch (error) {
+        console.error('Error approving proposal:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to approve proposal'}`);
+    }
+}
+
+// Reject proposal
+async function rejectProposal(proposalId: string) {
+    if (!confirm('Reject this proposal? The client will remain unpaired.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/simulation/reject/${proposalId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to reject proposal');
+        }
+        
+        alert('Proposal rejected.');
+        loadProposals('proposed');
+    } catch (error) {
+        console.error('Error rejecting proposal:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to reject proposal'}`);
+    }
+}
+
+// Load paired clients
+async function loadPairedClients() {
+    const listEl = document.getElementById('paired-clients-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div class="text-center text-slate-500 py-4">Loading...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/simulation/paired`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to load paired clients');
+        }
+        
+        if (!data.pairings || data.pairings.length === 0) {
+            listEl.innerHTML = '<div class="text-center text-slate-500 py-4"><p>No paired clients yet.</p></div>';
+            return;
+        }
+        
+        listEl.innerHTML = data.pairings.map((pairing: any) => {
+            const client = pairing.client || {};
+            const rbt = pairing.rbt || {};
+            
+            return `
+                <div class="border border-slate-200 rounded-lg p-4 mb-3 hover:shadow-md transition-shadow">
+                    <div class="flex items-start justify-between mb-2">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-slate-900">${client.name || 'Unknown Client'}</h4>
+                            <p class="text-xs text-slate-500 mt-1">Paired with ${rbt.full_name || 'Unknown RBT'}</p>
+                        </div>
+                        <span class="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                            ACTIVE
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">Paired: ${new Date(pairing.created_at).toLocaleString()}</p>
+                    <button onclick="reopenRBT('${pairing.rbt_id}', '${rbt.full_name}')" class="mt-3 px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors">
+                        Reopen RBT
+                    </button>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading paired clients:', error);
+        listEl.innerHTML = `<div class="text-center text-red-500 py-4"><p>Error: ${error instanceof Error ? error.message : 'Failed to load paired clients'}</p></div>`;
+    }
+}
+
+// Reopen RBT
+async function reopenRBT(rbtId: string, rbtName?: string) {
+    const name = rbtName || 'this RBT';
+    if (!confirm(`Reopen ${name}? This will deactivate active pairings and make the RBT available for future simulations.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL_SIM}/api/admin/rbts/${rbtId}/reopen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.message || 'Failed to reopen RBT');
+        }
+        
+        alert(`RBT reopened successfully!\n\nPairings deactivated: ${data.pairings_deactivated}\nClients unpaired: ${data.clients_unpaired}`);
+        loadPairedClients();
+        loadProposals('proposed');
+        refreshData(); // Refresh map
+    } catch (error) {
+        console.error('Error reopening RBT:', error);
+        alert(`Error: ${error instanceof Error ? error.message : 'Failed to reopen RBT'}`);
+    }
+}
+
+// Toggle section (for paired clients)
+function toggleSection(sectionName: string) {
+    const content = document.getElementById(`${sectionName}-content`);
+    const icon = document.getElementById(`${sectionName}-icon`);
+    
+    if (content && icon) {
+        const isHidden = content.classList.contains('hidden');
+        if (isHidden) {
+            content.classList.remove('hidden');
+            icon.textContent = '▼';
+            if (sectionName === 'paired') {
+                loadPairedClients();
+            }
+        } else {
+            content.classList.add('hidden');
+            icon.textContent = '▶';
+        }
+    }
+}
+
+// Make functions globally available for onclick handlers
+if (typeof window !== 'undefined') {
+    window.runMatchingNow = runMatchingNow;
+    window.switchTab = switchTab;
+    window.refreshData = refreshData;
+    window.loadUnmatched = loadUnmatched;
+    window.loadLocationsNeedingVerification = loadLocationsNeedingVerification;
+    window.toggleMapType = toggleMapType;
+    window.toggleShowAllRoutes = toggleShowAllRoutes;
+    window.showConnectionsForMatch = showConnectionsForMatch;
+    window.selectMatchCard = selectMatchCard;
+    // Simulation functions
+    window.addClient = addClient;
+    window.runSimulation = runSimulation;
+    window.loadProposals = loadProposals;
+    window.approveProposal = approveProposal;
+    window.rejectProposal = rejectProposal;
+    window.loadPairedClients = loadPairedClients;
+    window.reopenRBT = reopenRBT;
+    window.toggleSection = toggleSection;
+}
+// refreshSuggestions is already defined above, just assign it
+if (typeof refreshSuggestions !== 'undefined') {
+    window.refreshSuggestions = refreshSuggestions;
 }
 

@@ -1,25 +1,73 @@
-# Rise and Shine - Scheduling AI Dashboard
+# Rise and Shine - Scheduling AI System
 
-A sophisticated RBT-to-Client scheduling matching system with an interactive visual dashboard.
+An intelligent RBT (Registered Behavior Technician) to Client scheduling and matching system with real-time geocoding, travel time optimization, and comprehensive admin controls.
 
-## Features
+## Overview
 
-- 🤖 **Intelligent Matching Algorithm**: Matches RBTs (Registered Behavior Technicians) to clients based on:
-  - Location/travel feasibility
-  - Schedule overlap
-  - Fair workload distribution
+This system automatically matches RBTs with clients based on:
+- **Geographic proximity** (using Google Maps API for accurate travel times)
+- **Schedule availability** 
+- **Fair workload distribution**
+- **Manual overrides and approvals** (locked assignments, blocked pairs, manual matches)
 
-- 📊 **Interactive Dashboard**: Beautiful frontend with:
-  - Real-time statistics
-  - Interactive Google Maps visualization
-  - Filterable results list
-  - Rise and Shine branding
+## Architecture
 
-- 📍 **Address Enrichment**: Automatically generates placeholder addresses for missing data
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Frontend (Public)                       │
+│  • Interactive Dashboard (React-like vanilla JS)            │
+│  • Google Maps visualization                                │
+│  • Match management UI                                       │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+┌───────────────────────▼─────────────────────────────────────┐
+│                    API Server (Express)                      │
+│  • REST API endpoints                                        │
+│  • Match management                                          │
+│  • Client/RBT synchronization                               │
+│  • Override management                                       │
+└───────────────────────┬─────────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+┌───────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+│  Scheduling  │ │     HRM     │ │     CRM     │
+│     DB       │ │     DB      │ │     DB      │
+│  (Supabase)  │ │  (Supabase) │ │  (Supabase) │
+│              │ │             │ │             │
+│ • Clients    │ │ • RBTs      │ │ • Clients   │
+│ • Matches    │ │ • Schedules │ │ (read-only) │
+│ • Overrides  │ │             │ │             │
+│ • Cache      │ │             │ │             │
+└──────────────┘ └─────────────┘ └─────────────┘
+```
 
-- 🚗 **Transport Mode Assignment**: Randomly assigns transport modes (Car, Public Transit, Either) to RBTs
+## Key Features
 
-## Setup
+### 🤖 Intelligent Matching
+- **Travel Time Optimization**: Uses Google Maps Distance Matrix API with intelligent caching
+- **Peak Traffic Awareness**: Considers rush hour traffic patterns
+- **Location Quality Scoring**: Flags low-quality geocodes for manual review
+- **Fair Distribution**: Balances workload across RBTs
+
+### 📊 Admin Controls
+- **Manual Overrides**: Lock specific assignments, block incompatible pairs, manual matches
+- **Approval Workflow**: Review and approve/reject proposed matches
+- **Sync Management**: Sync clients from CRM database with change detection
+- **Audit Trail**: Complete match run history with metrics
+
+### 📍 Geocoding & Location
+- **Automatic Geocoding**: Converts addresses to coordinates using Google Maps
+- **Precision Tracking**: ROOFTOP, RANGE_INTERPOLATED, APPROXIMATE classification
+- **Cache Invalidation**: Automatic cache clearing when coordinates change
+- **Location Verification**: Manual verification UI for low-quality locations
+
+### 🔄 Data Synchronization
+- **CRM Integration**: Read-only client data sync from CRM database
+- **Change Detection**: Automatically flags stale coordinates when addresses change
+- **Fail-Safe**: Gracefully handles CRM unavailability
+
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -27,139 +75,158 @@ A sophisticated RBT-to-Client scheduling matching system with an interactive vis
 npm install
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Environment
 
-1. Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Edit `.env` and add your Google Maps API key:
-   ```bash
-   GOOGLE_MAPS_API_KEY=your-actual-api-key-here
-   ```
-
-3. Get a Google Maps API key from [Google Cloud Console](https://console.cloud.google.com/google/maps-apis)
-
-4. Update the config file (automatically runs on `npm start`):
-   ```bash
-   npm run update-config
-   ```
-
-**Note**: The `.env` file is gitignored for security. The `public/config.js` file is auto-generated from `.env` and is safe to commit (it's used by the frontend).
-
-### 3. Run the Matching Algorithm
+Copy `.env.example` to `.env` and fill in:
 
 ```bash
-npm run start
+# Scheduling Database (Primary)
+SCHED_SUPABASE_URL=your-scheduling-db-url
+SCHED_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# HRM Database (RBT data)
+HRM_SUPABASE_URL=your-hrm-db-url
+HRM_SUPABASE_SERVICE_ROLE_KEY=your-hrm-service-role-key
+
+# CRM Database (Client data - optional)
+CRM_SUPABASE_URL=your-crm-db-url
+CRM_SUPABASE_SERVICE_ROLE_KEY=your-crm-service-role-key
+
+# Google Maps API
+GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 ```
 
-This will:
-- Load and parse `rbt.csv` and `clients.csv`
-- Enrich data with addresses and transport modes
-- Run the matching algorithm
-- Generate `matches_output.csv` and `public/matches_data.json`
+### 3. Run Database Migrations
 
-### 4. Start the Frontend Server
+Execute SQL migrations in order:
+```bash
+sql/001_scheduling_schema.sql
+sql/002_meta_matching.sql
+sql/003_matches_run_id.sql
+sql/004_crm_sync_schema.sql
+sql/005_match_overrides_schema.sql
+```
 
+### 4. Start Servers
+
+**API Server** (port 3001):
+```bash
+npm run api:dev
+```
+
+**Frontend Server** (port 3000):
 ```bash
 npm run serve
 ```
 
-Or run both together:
-
-```bash
-npm run demo
-```
-
-### 5. View the Dashboard
-
-Open your browser to: `http://localhost:3000`
+Visit `http://localhost:3000` to access the dashboard.
 
 ## Project Structure
 
 ```
 .
 ├── src/
-│   ├── models.ts          # TypeScript interfaces
-│   ├── csvLoader.ts       # CSV parsing and data loading
-│   ├── location.ts        # Location normalization and travel feasibility
-│   ├── matcher.ts         # Core matching algorithm
-│   ├── dataEnrichment.ts  # Address generation and transport mode assignment
-│   └── index.ts           # Main entry point
-├── public/
-│   ├── index.html         # Frontend HTML
-│   ├── styles.css         # Rise and Shine styling
-│   ├── app.js             # Frontend JavaScript
-│   ├── server.js          # Simple HTTP server
-│   └── matches_data.json  # Generated matching data (after running)
-├── rbt.csv                # RBT data
-├── clients.csv            # Client data
-└── matches_output.csv     # Matching results (after running)
+│   ├── api/                    # Express API server
+│   │   ├── routes/            # API route handlers
+│   │   │   ├── location.ts    # Location verification endpoints
+│   │   │   ├── matches.ts     # Match query endpoints
+│   │   │   ├── matching.ts    # Matching algorithm triggers
+│   │   │   └── overrides.ts   # Override management
+│   │   └── server.ts          # Express server setup
+│   ├── lib/
+│   │   ├── clients.ts         # Client data access layer
+│   │   ├── rbts.ts            # RBT data access layer
+│   │   ├── config.ts          # Configuration management
+│   │   ├── geocoding/         # Geocoding services
+│   │   │   ├── geocode.ts     # Google Maps geocoding
+│   │   │   └── normalize.ts   # Address normalization
+│   │   ├── scheduling/
+│   │   │   ├── matcher.ts     # Core matching algorithm
+│   │   │   ├── travelTimeCache.ts  # Travel time caching
+│   │   │   ├── validation.ts  # Match validation
+│   │   │   ├── overrides.ts   # Override management
+│   │   │   ├── syncClients.ts # CRM sync service
+│   │   │   └── loadClientsFromCrm.ts  # CRM data loader
+│   │   ├── supabaseSched.ts   # Scheduling DB client
+│   │   ├── supabaseCrm.ts     # CRM DB client
+│   │   └── supabaseServer.ts  # HRM DB client
+│   ├── jobs/
+│   │   └── scheduler.ts       # Automated matching scheduler
+│   ├── scripts/               # Utility scripts
+│   │   ├── geocode-rbts.ts   # Geocode RBT addresses
+│   │   ├── migrate-clients.ts # Import clients from CSV
+│   │   └── test-matching.ts   # Test matching algorithm
+│   └── index.ts               # Legacy CLI entry point
+├── public/                    # Frontend assets
+│   ├── index.html            # Dashboard HTML
+│   ├── app.js                # Frontend JavaScript
+│   ├── styles.css            # Styling
+│   └── server.js             # Simple HTTP server
+├── sql/                      # Database migrations
+├── scripts/                  # Build scripts
+└── docs/                     # Documentation
 ```
 
-## How It Works
+## API Endpoints
 
-### Matching Algorithm
+### Matching
+- `POST /api/admin/matching/run-matching` - Run matching algorithm
+- `POST /api/admin/scheduling/approve` - Approve/reject matches
+- `GET /api/admin/matches` - Query matches with filters
 
-1. **Location Matching**: Uses borough-based travel feasibility rules
-   - Same borough → always feasible
-   - Brooklyn ↔ Queens → feasible
-   - Manhattan ↔ Queens → feasible
-   - etc.
+### Simulation Workflow
+- `POST /api/admin/simulation/add-client` - Add client manually with geocoding
+- `POST /api/admin/simulation/run` - Run simulation to create proposals
+- `GET /api/admin/simulation/proposals` - Get proposals (filter by status)
+- `POST /api/admin/simulation/approve/:proposal_id` - Approve a proposal (creates pairing)
+- `POST /api/admin/simulation/reject/:proposal_id` - Reject a proposal
+- `GET /api/admin/simulation/paired` - Get all paired clients
+- `POST /api/admin/rbts/:id/reopen` - Reopen RBT (make available again)
+- `GET /api/admin/rbts` - Get RBTs with availability filter
 
-2. **Schedule Overlap**: Finds overlapping time slots between:
-   - Client requested times (2-6 PM weekdays by default)
-   - RBT available times (9 AM-5 PM weekdays by default)
+### Overrides
+- `GET /api/admin/scheduling/overrides` - List all overrides
+- `POST /api/admin/scheduling/overrides` - Create override
+- `DELETE /api/admin/scheduling/overrides/:id` - Delete override
 
-3. **Fair Distribution**: Assigns clients to RBTs to balance workload
+### Synchronization
+- `POST /api/admin/scheduling/sync-clients` - Sync clients from CRM
+- `GET /api/admin/scheduling/sync-clients/status` - Get sync status
 
-### Data Enrichment
+### Location
+- `GET /api/location/verify` - Get locations needing verification
+- `POST /api/location/update` - Update location coordinates
 
-- **Placeholder Addresses**: For clients/RBTs without full addresses, generates realistic addresses based on borough
-- **Transport Modes**: Randomly assigns Car, Public Transit, or Either to RBTs
+## Scripts
 
-## Configuration
-
-### Adjust Travel Feasibility
-
-Edit `src/location.ts` to modify the `TRAVEL_FEASIBLE_MATRIX`:
-
-```typescript
-const TRAVEL_FEASIBLE_MATRIX: Record<string, string[]> = {
-  "Brooklyn": ["Brooklyn", "Queens", "Manhattan", "Staten Island"],
-  // ... add/modify rules
-};
+```bash
+npm run api:dev        # Start API server in development mode
+npm run serve          # Start frontend server
+npm run start          # Run matching algorithm (CLI)
+npm run geocode-rbts   # Geocode all RBT addresses
+npm run migrate-clients # Import clients from CSV
+npm run match:dry      # Test matching algorithm (dry run)
 ```
 
-### Change Default Schedules
+## Simulation Workflow
 
-Edit placeholder schedule functions in `src/csvLoader.ts`:
-- `generateRBTPlaceholderSchedule()` - RBT availability
-- `generateClientPlaceholderSchedule()` - Client requested times
+The system includes a manual client entry and simulation-based matching workflow:
 
-## Demo Features
+1. **Add Clients**: Manually add clients with address (automatically geocoded)
+2. **Run Simulation**: Creates proposals for unpaired clients with RBTs within 30 minutes travel time
+3. **Review Proposals**: View proposed matches in the dashboard
+4. **Approve/Reject**: Approve proposals to create active pairings (locks RBT) or reject to keep client unpaired
+5. **Reopen RBTs**: Make locked RBTs available again for future simulations
 
-- **Statistics Dashboard**: Real-time counts of matched/pending clients and total hours
-- **Interactive Map**: 
-  - Blue markers = Clients
-  - Orange markers = RBTs
-  - Green lines = Matched pairs
-  - Click markers for details
-- **Filterable Results**: Filter by All, Matched, or Pending
-- **Detailed Cards**: See full match details including addresses, transport modes, and hours
+See [Simulation Workflow Documentation](docs/SIMULATION_WORKFLOW.md) for detailed usage instructions.
 
-## Future Enhancements
+## Documentation
 
-- [ ] Real Google Maps Geocoding API integration
-- [ ] Real travel time calculations
-- [ ] Database persistence
-- [ ] Real schedule data from CSV
-- [ ] Multi-week scheduling
-- [ ] Priority-based matching
-- [ ] Export scheduling reports
+- [Integration Guide](docs/INTEGRATION_GUIDE.md) - Detailed integration documentation
+- [Quick Start Guide](docs/QUICKSTART.md) - Step-by-step setup guide
+- [Status Management](docs/STATUS_MANAGEMENT_INTEGRATION.md) - Status workflow documentation
+- [Simulation Workflow](docs/SIMULATION_WORKFLOW.md) - Manual client entry and proposal-based matching guide
 
 ## License
 
 ISC
-# riseandshine-scheduling

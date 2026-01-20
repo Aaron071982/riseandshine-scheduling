@@ -1,5 +1,12 @@
-import * as dotenv from 'dotenv';
-dotenv.config();
+// Load dotenv only if GOOGLE_MAPS_API_KEY not already set
+if (!process.env.GOOGLE_MAPS_API_KEY) {
+  try {
+    const dotenv = require('dotenv');
+    dotenv.config();
+  } catch (e) {
+    // dotenv not available or already loaded - that's fine
+  }
+}
 
 export type LatLng = { lat: number; lng: number };
 
