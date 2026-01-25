@@ -300,10 +300,10 @@ router.get('/', async (req: Request, res: Response) => {
         const activeRBTs = await getActiveRBTs();
         console.log(`[API] getActiveRBTs returned ${activeRBTs.length} RBTs`);
         
-        // Convert to simulation format - include ALL RBTs with coordinates, not just "active" ones
+        // Convert to simulation format - only RBTs with zip codes
         if (activeRBTs.length > 0) {
           rbts = activeRBTs
-            .filter(rbt => rbt.lat && rbt.lng) // Only RBTs with coordinates
+            .filter(rbt => rbt.lat && rbt.lng && rbt.zip && rbt.zip.trim() !== '') // Only RBTs with coordinates AND zip codes
             .map(rbt => ({
               id: rbt.id,
               full_name: rbt.full_name,
@@ -311,33 +311,6 @@ router.get('/', async (req: Request, res: Response) => {
               lng: rbt.lng,
               availability_status: 'available' as const,
             }));
-        } else {
-          // If getActiveRBTs returned empty, try HRM directly with less restrictions
-          console.log('[API] getActiveRBTs returned empty, trying HRM database directly...');
-          try {
-            const { supabaseServer } = await import('../../lib/supabaseServer');
-            const { data: hrmRbts, error: hrmError } = await supabaseServer
-              .from('rbt_profiles')
-              .select('id, firstName, lastName, locationCity, locationState, zipCode, lat, lng')
-              .not('lat', 'is', null)
-              .not('lng', 'is', null)
-              .limit(100);
-            
-            if (!hrmError && hrmRbts && hrmRbts.length > 0) {
-              console.log(`[API] Found ${hrmRbts.length} RBTs in HRM with coordinates`);
-              rbts = hrmRbts.map((rbt: any) => ({
-                id: rbt.id,
-                full_name: `${rbt.firstName || ''} ${rbt.lastName || ''}`.trim() || 'Unknown',
-                lat: parseFloat(rbt.lat),
-                lng: parseFloat(rbt.lng),
-                availability_status: 'available' as const,
-              }));
-            } else {
-              console.log('[API] HRM query error or empty:', hrmError?.message || 'No data');
-            }
-          } catch (hrmErr) {
-            console.error('[API] Error querying HRM:', hrmErr);
-          }
         }
         
         console.log(`[API] Final RBT count: ${rbts.length}`);

@@ -16,11 +16,13 @@ let rbtMarkers = [];
 let clientMarker = null;
 let directionsRenderer = null;
 let currentProposal = null;
+let approvedPairings = []; // Track approved matches for map display
 
 // Initialize when Google Maps loads
 window.addEventListener('google-maps-loaded', () => {
     initMap();
     loadRBTs();
+    loadApprovedPairings(); // Load approved matches on startup
 });
 
 // Initialize map
@@ -55,32 +57,6 @@ async function loadRBTs() {
         console.log('RBTs API response:', data);
 
         let rbts = data.rbts || [];
-        
-        // Fallback: Try loading from static matches_data.json (old frontend format)
-        if (rbts.length === 0) {
-            console.log('No RBTs from API, trying matches_data.json...');
-            try {
-                const matchesResponse = await fetch('matches_data.json');
-                const matchesData = await matchesResponse.json();
-                
-                if (matchesData && matchesData.rbts && matchesData.rbts.length > 0) {
-                    console.log(`Found ${matchesData.rbts.length} RBTs in matches_data.json`);
-                    // Convert old format to new format
-                    rbts = matchesData.rbts
-                        .filter(rbt => rbt.lat && rbt.lng) // Only RBTs with coordinates
-                        .map(rbt => ({
-                            id: rbt.id,
-                            full_name: rbt.name || rbt.full_name || 'Unknown',
-                            lat: rbt.lat,
-                            lng: rbt.lng,
-                            availability_status: 'available'
-                        }));
-                    console.log(`After filtering for coordinates: ${rbts.length} RBTs`);
-                }
-            } catch (jsonError) {
-                console.error('Error loading matches_data.json:', jsonError);
-            }
-        }
         
         if (rbts.length === 0) {
             console.log('No RBTs found anywhere');
@@ -314,10 +290,22 @@ async function runSimulation() {
             throw new Error(data.message || 'Failed to run simulation');
         }
 
-        statusEl.textContent = `Simulation complete: ${data.proposals_created} proposal(s) created`;
-
-        // Load and display proposals
-        await loadProposals();
+        if (data.proposals_created > 0) {
+            statusEl.textContent = `✅ Simulation complete: ${data.proposals_created} proposal(s) created`;
+            // Load and display proposals only if matches were found
+            await loadProposals();
+        } else {
+            statusEl.textContent = `⚠️ No matches found within 30 minutes travel time`;
+            document.getElementById('results-container').innerHTML = `
+                <div class="text-center py-8">
+                    <div class="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
+                        <span class="text-amber-600 text-3xl">⚠️</span>
+                    </div>
+                    <p class="text-amber-700 font-semibold mb-2">No matches found</p>
+                    <p class="text-sm text-slate-600">No RBTs found within 30 minutes travel time for this client.</p>
+                </div>
+            `;
+        }
     } catch (error) {
         console.error('Error running simulation:', error);
         statusEl.textContent = `Error: ${error.message}`;
@@ -430,9 +418,9 @@ async function loadProposals() {
 }
 
 // Show connection line on map
-function showConnectionOnMap(clientPos, rbtPos, clientName, rbtName, travelTime, distance) {
-    // Clear existing directions
-    if (directionsRenderer) {
+function showConnectionOnMap(clientPos, rbtPos, clientName, rbtName, travelTime, distance, isApproved = false) {
+    // Don't clear existing directions if showing approved (we want multiple lines)
+    if (!isApproved && directionsRenderer) {
         directionsRenderer.setMap(null);
     }
 
@@ -444,39 +432,55 @@ function showConnectionOnMap(clientPos, rbtPos, clientName, rbtName, travelTime,
         travelMode: google.maps.TravelMode.DRIVING
     }, (result, status) => {
         if (status === 'OK' && result) {
-            directionsRenderer = new google.maps.DirectionsRenderer({
+            const renderer = new google.maps.DirectionsRenderer({
                 map: map,
                 directions: result,
                 suppressMarkers: true,
                 polylineOptions: {
-                    strokeColor: '#4CAF50',
-                    strokeWeight: 5,
-                    strokeOpacity: 0.8
+                    strokeColor: isApproved ? '#10B981' : '#4CAF50', // Darker green for approved
+                    strokeWeight: isApproved ? 6 : 5,
+                    strokeOpacity: isApproved ? 1.0 : 0.8,
+                    zIndex: isApproved ? 1000 : 100
                 }
             });
+            
+            // Store renderer for approved pairings
+            if (isApproved) {
+                if (!window.approvedRenderers) window.approvedRenderers = [];
+                window.approvedRenderers.push(renderer);
+            } else {
+                directionsRenderer = renderer;
+            }
 
-            // Fit map to show both locations
-            const bounds = new google.maps.LatLngBounds();
-            bounds.extend(clientPos);
-            bounds.extend(rbtPos);
-            map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+            // Only fit bounds for current proposal (not approved ones)
+            if (!isApproved) {
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend(clientPos);
+                bounds.extend(rbtPos);
+                map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+            }
 
             // Add info window at midpoint
             const midLat = (clientPos.lat + rbtPos.lat) / 2;
             const midLng = (clientPos.lng + rbtPos.lng) / 2;
 
+            const statusText = isApproved ? '<span style="color: #10B981; font-weight: 600;">✓ APPROVED</span>' : '';
             const infoWindow = new google.maps.InfoWindow({
                 content: `
                     <div style="padding: 8px; text-align: center; min-width: 200px;">
                         <p style="margin: 0 0 8px 0; font-weight: 600;">${rbtName} → ${clientName}</p>
-                        <p style="margin: 4px 0; font-size: 13px;"><strong>Travel Time:</strong> ${travelTime} min</p>
-                        <p style="margin: 4px 0; font-size: 13px;"><strong>Distance:</strong> ${distance} mi</p>
+                        ${statusText ? `<p style="margin: 4px 0; font-size: 12px;">${statusText}</p>` : ''}
+                        ${travelTime ? `<p style="margin: 4px 0; font-size: 13px;"><strong>Travel Time:</strong> ${travelTime} min</p>` : ''}
+                        ${distance ? `<p style="margin: 4px 0; font-size: 13px;"><strong>Distance:</strong> ${distance} mi</p>` : ''}
                     </div>
                 `,
                 position: { lat: midLat, lng: midLng }
             });
 
-            infoWindow.open(map);
+            // Only open info window for current proposal, not approved ones
+            if (!isApproved) {
+                infoWindow.open(map);
+            }
         } else {
             console.error('Directions request failed:', status);
         }
@@ -524,6 +528,9 @@ async function approveProposal() {
 
         // Reload RBTs to reflect availability changes
         await loadRBTs();
+        
+        // Load approved pairings to show on map
+        await loadApprovedPairings();
         
         // Reload history
         if (document.getElementById('results-history').classList.contains('hidden') === false) {
@@ -798,6 +805,44 @@ async function rejectDeferredProposal(proposalId) {
         alert('Proposal rejected');
     } catch (error) {
         alert(`Error: ${error.message}`);
+    }
+}
+
+// Load approved pairings and show on map
+async function loadApprovedPairings() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/admin/simulation/paired`);
+        const data = await response.json();
+        
+        if (!response.ok || !data.pairings || data.pairings.length === 0) {
+            approvedPairings = [];
+            return;
+        }
+        
+        approvedPairings = data.pairings;
+        
+        // Show approved pairings on map
+        approvedPairings.forEach(pairing => {
+            const client = pairing.client;
+            const rbt = pairing.rbt;
+            
+            if (client && rbt && client.lat && client.lng && rbt.lat && rbt.lng) {
+                // Show connection line for approved pairing
+                showConnectionOnMap(
+                    { lat: client.lat, lng: client.lng },
+                    { lat: rbt.lat, lng: rbt.lng },
+                    client.name,
+                    rbt.full_name,
+                    0, // Travel time not needed for approved
+                    null,
+                    true // Mark as approved
+                );
+            }
+        });
+        
+        console.log(`✅ Loaded ${approvedPairings.length} approved pairings on map`);
+    } catch (error) {
+        console.error('Error loading approved pairings:', error);
     }
 }
 

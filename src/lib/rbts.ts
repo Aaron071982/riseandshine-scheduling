@@ -52,7 +52,7 @@ export async function getActiveRBTs(): Promise<RBT[]> {
   }
 
   try {
-    // Try to fetch from scheduling DB with full schema
+    // Try to fetch from scheduling DB with full schema - only RBTs with zip codes
     const { data, error } = await supabaseSched
       .from('rbt_profiles')
       .select(`
@@ -62,7 +62,9 @@ export async function getActiveRBTs(): Promise<RBT[]> {
         status, is_active, transport_mode, gender,
         forty_hour_course_completed, forty_hour_course_link,
         hrm_id
-      `);
+      `)
+      .not('zip_code', 'is', null)
+      .neq('zip_code', '');
 
     if (error) {
       // If table doesn't exist in scheduling DB, try legacy HRM format

@@ -159,13 +159,15 @@ export async function runSimulation(): Promise<SimulationResult> {
     };
   }
 
-  // Get available RBTs
+  // Get available RBTs with proper zip codes
   const { data: rbts, error: rbtsError } = await supabase
     .from('rbt_profiles')
-    .select('id, full_name, lat, lng, availability_status')
+    .select('id, full_name, lat, lng, availability_status, zip_code')
     .eq('availability_status', 'available')
     .not('lat', 'is', null)
-    .not('lng', 'is', null);
+    .not('lng', 'is', null)
+    .not('zip_code', 'is', null)
+    .neq('zip_code', '');
 
   if (rbtsError) {
     throw new Error(`Failed to fetch RBTs: ${rbtsError.message}`);
